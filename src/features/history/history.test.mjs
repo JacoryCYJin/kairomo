@@ -181,3 +181,77 @@ test('date grouping uses the first effective interval in the selected period aft
   );
   assert.equal(recordStartInPeriod(s, periodFor('all', new Date()), 0), s.started_at_ms);
 });
+
+test('year selection includes leap day and uses the next local year boundary', () => {
+  assert.deepEqual(periodFor('year', new Date(2024, 6, 9)), {
+    start: at(2024, 1, 1),
+    end: at(2025, 1, 1),
+  });
+  assert.equal(historyBuckets([], 'year', new Date(2024, 0, 1), 0).length, 12);
+  assert.equal(dateInput(shiftPeriod('year', new Date(2024, 1, 29), 1)), '2025-01-01');
+});
+
+test('custom dates include the whole last day and reject reversed, missing and impossible dates', async () => {
+  const { customPeriod } = await import('./history.ts');
+  assert.deepEqual(customPeriod('2026-10-25', '2026-10-26'), {
+    start: at(2026, 10, 25),
+    end: at(2026, 10, 27),
+  });
+  assert.deepEqual(customPeriod('2026-03-08', '2026-03-08'), {
+    start: at(2026, 3, 8),
+    end: at(2026, 3, 9),
+  });
+  for (const [from, to] of [
+    ['2026-02-30', '2026-03-01'],
+    ['2026-10-27', '2026-10-26'],
+    ['', '2026-10-26'],
+  ])
+    assert.equal(customPeriod(from, to), null);
+  const s = session('last-minute', at(2026, 10, 26, 23, 58), at(2026, 10, 26, 23, 59));
+  assert.equal(totalInPeriod([s], 'focus', customPeriod('2026-10-25', '2026-10-26'), 0), 60000);
+});
+
+test('one completed focus earns one bean on its completion day, independently of cross-day time', async () => {
+  const { earnedBeans } = await import('./history.ts');
+  const s = session('midnight', at(2026, 10, 25, 23, 40), at(2026, 10, 26, 0, 20));
+  const first = periodFor('day', new Date(2026, 9, 25)),
+    second = periodFor('day', new Date(2026, 9, 26));
+  assert.equal(earnedBeans([s], first).length, 0);
+  assert.equal(earnedBeans([s], second).length, 1);
+  assert.equal(totalInPeriod([s], 'focus', first, 0), 20 * 60000);
+  assert.equal(totalInPeriod([s], 'focus', second, 0), 20 * 60000);
+  const midnight = session('exact-midnight', at(2026, 10, 25, 23, 59), at(2026, 10, 26));
+  assert.equal(earnedBeans([midnight], second).length, 1);
+  assert.equal(historyRecords([midnight], second, 0).length, 1);
+});
+
+test('beans exclude ongoing focus and rest, include short tasks, and never apply the six-bean summary cap', async () => {
+  const { earnedBeans } = await import('./history.ts');
+  const day = periodFor('day', new Date(2026, 9, 26));
+  const many = Array.from({ length: 125 }, (_, i) =>
+    session(String(i), at(2026, 10, 26, 1), at(2026, 10, 26, 1, 1)),
+  );
+  const ongoing = session('ongoing', at(2026, 10, 26), null, 'focus', []);
+  const rest = session('rest', at(2026, 10, 26), at(2026, 10, 26, 0, 10), 'break');
+  const data = [...many, ongoing, rest],
+    before = [...data];
+  assert.equal(earnedBeans(data, day).length, 125);
+  assert.deepEqual(data, before);
+  assert.equal(
+    earnedBeans(
+      data.filter((s) => s.id !== '5'),
+      day,
+    ).length,
+    124,
+  );
+});
+
+test('month grid starts Monday, handles year boundaries and leaves selection independent of browsing', async () => {
+  const { monthGrid } = await import('./history.ts');
+  const grid = monthGrid(new Date(2026, 0, 31));
+  assert.equal(grid.length, 42);
+  assert.equal(grid[0].getDay(), 1);
+  assert.equal(dateInput(grid[0]), '2025-12-29');
+  assert.equal(grid.filter((d) => d.getMonth() === 0).length, 31);
+  assert.equal(monthGrid(new Date(2024, 1, 29)).filter((d) => d.getMonth() === 1).length, 29);
+});

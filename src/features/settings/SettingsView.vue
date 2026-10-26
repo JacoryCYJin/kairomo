@@ -1,22 +1,43 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
-import { Bell, Languages, Check, Monitor } from 'lucide-vue-next';
-import { copy } from '../../shared/i18n';
-import type { Settings } from '../../shared/ipc/types';
-const props = defineProps<{ settings: Settings; busy: boolean; dark: boolean }>();
-const emit = defineEmits<{ save: [Settings] }>();
-const form = reactive({ ...props.settings });
+import { Bell, Languages, Check, Monitor, Layers3 } from 'lucide-vue-next';
+import { availableSeries } from '../../shared/series/catalog';
+import { copy, locale } from '../../shared/i18n';
+import type { Preferences, Settings } from '../../shared/ipc/types';
+const props = defineProps<{ settings: Settings; busy: boolean }>();
+const emit = defineEmits<{ save: [Settings]; preference: [Partial<Preferences>] }>();
+const form = reactive({
+  focus_minutes: props.settings.focus_minutes,
+  break_minutes: props.settings.break_minutes,
+  notifications: props.settings.notifications,
+});
 watch(
-  () => JSON.stringify(props.settings),
-  () => Object.assign(form, props.settings),
+  () => props.settings,
+  (next, previous) => {
+    // Preference saves and timer snapshots must not erase unsaved duration edits.
+    for (const key of ['focus_minutes', 'break_minutes'] as const) {
+      if (form[key] === previous[key]) form[key] = next[key];
+    }
+    if (form.notifications === previous.notifications) form.notifications = next.notifications;
+  },
 );
+function choosePreference(key: keyof Preferences, event: Event) {
+  const select = event.target as HTMLSelectElement;
+  const value = select.value;
+  // Display only the persisted value; a failed save leaves the original choice selected.
+  select.value = props.settings[key];
+  if (key === 'locale') emit('preference', { locale: value as Preferences['locale'] });
+  else if (key === 'appearance')
+    emit('preference', { appearance: value as Preferences['appearance'] });
+  else emit('preference', { visual_series: value as Preferences['visual_series'] });
+}
 </script>
 <template>
   <section class="pb-5">
     <div class="pt-5">
       <h1 class="mb-2 text-xl font-semibold tracking-tight">{{ copy.settingsTitle }}</h1>
     </div>
-    <form @submit.prevent="emit('save', { ...form })">
+    <form @submit.prevent="emit('save', { ...settings, ...form })">
       <section class="mt-7 pb-6">
         <h2 class="mb-4 text-sm font-medium">{{ copy.timerSettings }}</h2>
         <div class="grid grid-cols-2 gap-4">
@@ -78,7 +99,9 @@ watch(
         ><select
           class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
           id="locale"
-          v-model="form.locale"
+          :value="settings.locale"
+          :disabled="busy"
+          @change="choosePreference('locale', $event)"
         >
           <option value="zh-CN">简体中文</option>
           <option value="en-US">English</option>
@@ -87,12 +110,40 @@ watch(
       <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
         <Monitor :size="18" :stroke-width="1.6" class="text-muted" />
         <div>
-          <span>{{ copy.appearance }}</span>
-          <p class="mt-1.5 text-xs leading-relaxed text-faint">{{ copy.followSystemHint }}</p>
+          <label for="appearance">{{ copy.appearance }}</label>
+          <p
+            v-if="settings.appearance === 'system'"
+            class="mt-1.5 text-xs leading-relaxed text-faint"
+          >
+            {{ copy.followSystemHint }}
+          </p>
         </div>
-        <span class="ml-auto text-right text-xs text-muted min-[621px]:whitespace-nowrap"
-          >{{ copy.followSystem }} · {{ dark ? copy.dark : copy.light }}</span
+        <select
+          id="appearance"
+          class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
+          :value="settings.appearance"
+          :disabled="busy"
+          @change="choosePreference('appearance', $event)"
         >
+          <option value="system">{{ copy.followSystem }}</option>
+          <option value="light">{{ copy.light }}</option>
+          <option value="dark">{{ copy.dark }}</option>
+        </select>
+      </div>
+      <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
+        <Layers3 :size="18" :stroke-width="1.6" class="text-muted" />
+        <label for="visual-series">{{ copy.visualSeries }}</label>
+        <select
+          id="visual-series"
+          class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
+          :value="settings.visual_series"
+          :disabled="busy"
+          @change="choosePreference('visual_series', $event)"
+        >
+          <option v-for="series in availableSeries" :key="series.id" :value="series.id">
+            {{ series.name[locale] }}
+          </option>
+        </select>
       </div>
       <div class="flex justify-end pt-4">
         <button class="button primary" type="submit" :disabled="busy">

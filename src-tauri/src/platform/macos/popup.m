@@ -66,6 +66,9 @@ void kairomo_configure_popup(void *pointer) {
     window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
                                 NSWindowCollectionBehaviorFullScreenAuxiliary |
                                 NSWindowCollectionBehaviorIgnoresCycle;
+    if (@available(macOS 13.0, *)) {
+        window.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllApplications;
+    }
     window.hasShadow = YES;
     // AppKit frame autosave may normalize a saved frame onto the window's initial
     // screen. Store the global point origin explicitly instead.

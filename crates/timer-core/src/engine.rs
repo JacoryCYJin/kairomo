@@ -123,6 +123,14 @@ impl Engine {
         self.state.checkpoint_at_ms = now;
         Ok(session)
     }
+    /// Discard only the session the confirmation referred to. No record is returned to save.
+    pub fn cancel(&mut self, expected_id: &str, now: i64) -> Result<(), TimerError> {
+        if self.state.current.as_ref().map(|s| s.id.as_str()) != Some(expected_id) {
+            return Err(TimerError::InvalidTransition);
+        }
+        self.finish(now)?;
+        Ok(())
+    }
     pub fn switch(&mut self, id: String, now: i64) -> Result<Session, TimerError> {
         let current = self
             .state
@@ -221,5 +229,27 @@ mod tests {
                 ..Settings::default()
             })
             .is_err());
+    }
+    #[test]
+    fn cancel_discards_running_paused_and_break_sessions_but_rejects_stale_ids() {
+        for paused in [false, true] {
+            let mut e = active();
+            e.advance(30_000, 31_000);
+            if paused {
+                e.pause(31_000, "manual").unwrap();
+            }
+            assert!(e.cancel("old", 32_000).is_err());
+            assert!(e.state.current.is_some());
+            e.cancel("a", 32_000).unwrap();
+            assert_eq!(e.state.phase, Phase::Idle);
+            assert!(e.state.current.is_none());
+            assert!(!e.state.target_notified);
+            assert!(e.cancel("a", 33_000).is_err());
+            e.start("new".into(), "Read".into(), 34_000).unwrap();
+            assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
+            e.switch("rest".into(), 35_000).unwrap();
+            e.cancel("rest", 36_000).unwrap();
+            assert!(e.state.current.is_none());
+        }
     }
 }

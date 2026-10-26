@@ -2,6 +2,13 @@ use crate::runtime::AppState;
 use tauri::{Emitter, State};
 use timer_core::{Repository, Session, Settings, Snapshot};
 #[tauri::command]
+pub async fn sync_window_appearance(
+    window: tauri::WebviewWindow,
+    appearance: timer_core::Appearance,
+) -> Result<(), String> {
+    crate::platform::sync_window_appearance(window, appearance).await
+}
+#[tauri::command]
 pub fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     Ok(state
         .0
@@ -27,6 +34,20 @@ pub fn timer_action(
     Ok(snapshot)
 }
 #[tauri::command]
+pub fn cancel_session(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    expected_id: String,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .cancel_session(&expected_id)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
 pub fn sessions(state: State<'_, AppState>) -> Result<Vec<Session>, String> {
     state
         .0
@@ -47,6 +68,22 @@ pub fn save_settings(
         .lock()
         .map_err(|_| "runtime_unavailable")?
         .configure(settings)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
+pub fn save_preferences(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    locale: Option<String>,
+    appearance: Option<timer_core::Appearance>,
+    visual_series: Option<String>,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .preferences(locale, appearance, visual_series)?;
     let _ = app.emit("timer:changed", &snapshot);
     Ok(snapshot)
 }

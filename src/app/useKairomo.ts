@@ -1,12 +1,19 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { api, desktop } from '../shared/ipc/client';
-import type { Action, Session, Settings, Snapshot } from '../shared/ipc/types';
+import type { Action, Preferences, Session, Settings, Snapshot } from '../shared/ipc/types';
 import { copy, locale } from '../shared/i18n';
 const defaults: Snapshot = {
   revision: 0,
   phase: 'idle',
   current: null,
-  settings: { focus_minutes: 50, break_minutes: 10, locale: 'zh-CN', notifications: true },
+  settings: {
+    focus_minutes: 50,
+    break_minutes: 10,
+    locale: 'zh-CN',
+    notifications: true,
+    appearance: 'system',
+    visual_series: 'coffee',
+  },
   needs_recovery: false,
   pause_reason: null,
   checkpoint_at_ms: 0,
@@ -64,10 +71,25 @@ export function useKairomo() {
       await refresh();
     });
   }
+  async function cancelSession(expectedId: string): Promise<boolean> {
+    if (!ready.value || busy.value) return false;
+    let cancelled = false;
+    await operate(async () => {
+      apply(await api.cancelSession(expectedId));
+      cancelled = true;
+      await refresh();
+    });
+    return cancelled;
+  }
   async function configure(settings: Settings) {
     await operate(async () => {
       apply(await api.settings(settings));
       notice.value = copy.value.saved;
+    });
+  }
+  async function preferences(preferences: Partial<Preferences>) {
+    await operate(async () => {
+      apply(await api.preferences(preferences));
     });
   }
   async function remove(id: string) {
@@ -161,7 +183,9 @@ export function useKairomo() {
     notice,
     connect,
     act,
+    cancelSession,
     configure,
+    preferences,
     remove,
     correct,
     exportRecords,

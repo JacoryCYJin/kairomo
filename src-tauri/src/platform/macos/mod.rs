@@ -1,7 +1,51 @@
 use crate::runtime::AppState;
 use std::sync::OnceLock;
 use tauri::{Emitter, Manager};
+use tauri_nspanel::{tauri_panel, ManagerExt, StyleMask, WebviewWindowExt};
+
+tauri_panel! {
+    panel!(TimerPanel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: false,
+            is_floating_panel: true
+        }
+    })
+}
 static HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+extern "C" {
+    fn kairomo_set_window_appearance(window: *mut std::ffi::c_void, mode: i32);
+}
+pub async fn sync_window_appearance(
+    window: tauri::WebviewWindow,
+    appearance: timer_core::Appearance,
+) -> Result<(), String> {
+    let mode = match appearance {
+        timer_core::Appearance::System => 0,
+        timer_core::Appearance::Light => 1,
+        timer_core::Appearance::Dark => 2,
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let target = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let result = target
+                .ns_window()
+                .map_err(|error| error.to_string())
+                .map(|pointer| {
+                    // SAFETY: AppKit runs on the main thread. The captured WebviewWindow
+                    // keeps its NSWindow alive for this synchronous call; no pointer is retained.
+                    unsafe {
+                        kairomo_set_window_appearance(pointer, mode);
+                    }
+                });
+            let _ = sender.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || receiver.recv().map_err(|error| error.to_string()))
+        .await
+        .map_err(|error| error.to_string())??
+}
 extern "C" {
     fn kairomo_observe_sleep(callback: extern "C" fn());
 }
@@ -58,6 +102,35 @@ pub fn configure_popup(app: &tauri::AppHandle) -> Result<(), String> {
     unsafe {
         kairomo_configure_popup(pointer);
     }
+    let panel = window.to_panel::<TimerPanel>().map_err(|e| e.to_string())?;
+    panel
+        .add_style_mask(StyleMask::empty().nonactivating_panel().into())
+        .map_err(|e| e.to_string())?;
+    panel.set_hides_on_deactivate(false);
+    panel.set_released_when_closed(false);
+    super::windows::trace(app, "timer converted to nonactivating floating NSPanel");
+    Ok(())
+}
+
+pub fn popup_visible(app: &tauri::AppHandle) -> Result<bool, String> {
+    app.get_webview_panel("main")
+        .map(|panel| panel.is_visible())
+        .map_err(|_| "panel_unavailable".into())
+}
+
+pub fn show_popup(app: &tauri::AppHandle) -> Result<(), String> {
+    let panel = app
+        .get_webview_panel("main")
+        .map_err(|_| "panel_unavailable")?;
+    panel.show_and_make_key();
+    Ok(())
+}
+
+pub fn hide_popup(app: &tauri::AppHandle) -> Result<(), String> {
+    let panel = app
+        .get_webview_panel("main")
+        .map_err(|_| "panel_unavailable")?;
+    panel.hide();
     Ok(())
 }
 pub fn ensure_popup_visible(

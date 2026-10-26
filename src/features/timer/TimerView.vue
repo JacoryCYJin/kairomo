@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Pause, Play, Coffee, Square } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { Pause, Play, SkipForward, CircleX } from 'lucide-vue-next';
+import CompletionDots from './CompletionDots.vue';
+import CancelSessionDialog from './CancelSessionDialog.vue';
+import CoffeeCupIcon from '../../shared/ui/CoffeeCupIcon.vue';
 import { clock, copy } from '../../shared/i18n';
-import type { Action, Snapshot } from '../../shared/ipc/types';
-const props = defineProps<{ state: Snapshot; busy: boolean }>();
+import type { Action, Session, Snapshot } from '../../shared/ipc/types';
+const props = defineProps<{
+  state: Snapshot;
+  busy: boolean;
+  records: Session[];
+  cancelSession: (id: string) => Promise<boolean>;
+}>();
+const cancellation = ref<InstanceType<typeof CancelSessionDialog> | null>(null);
 const emit = defineEmits<{ action: [Action] }>();
 const current = computed(() => props.state.current);
 const isBreak = computed(() => current.value?.kind === 'break');
@@ -14,13 +23,6 @@ const target = computed(
 const over = computed(() => !!current.value && elapsed.value >= target.value);
 const display = computed(() =>
   over.value ? elapsed.value - target.value : target.value - elapsed.value,
-);
-const label = computed(() =>
-  props.state.phase === 'paused'
-    ? copy.value.paused
-    : isBreak.value
-      ? copy.value.breakLegend
-      : copy.value.focus,
 );
 const primaryLabel = computed(() =>
   props.state.phase === 'idle'
@@ -38,29 +40,31 @@ const interruption = computed(() =>
 );
 </script>
 <template>
-  <section class="px-5 pb-4 pt-2.5 text-center" :class="{ resting: isBreak }">
-    <div class="text-sm font-normal leading-5">{{ label }}</div>
+  <section class="flex h-full flex-col items-center justify-center px-5 py-8 text-center">
     <div
-      class="relative mt-1 whitespace-nowrap text-timer font-light tabular-nums"
+      class="relative whitespace-nowrap text-timer font-medium tabular-nums"
       :class="state.phase === 'paused' ? 'text-muted' : 'text-ink'"
       aria-live="off"
     >
       <span v-if="over" class="mr-1 align-[9px] text-timer-sign tracking-normal">+</span
       >{{ clock(display) }}
     </div>
-    <div class="mt-4 flex items-center justify-center gap-7">
+    <div class="mt-2 h-6">
+      <CompletionDots :records="records" :series-id="state.settings.visual_series" />
+    </div>
+    <div class="mt-2.5 grid grid-cols-[32px_56px_32px] items-center justify-center gap-7">
       <button
         v-if="current"
-        class="icon-button !size-8"
+        class="icon-button pointer-events-none col-start-1 row-start-1 !size-8 opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:disabled:opacity-50"
         :disabled="busy"
-        :aria-label="copy.finish"
-        :title="copy.finish"
-        @click="emit('action', 'finish')"
+        :aria-label="copy.cancelSession"
+        :title="copy.cancelSession"
+        @click="cancellation?.open()"
       >
-        <Square :size="16" />
+        <CircleX :size="18" />
       </button>
       <button
-        class="flex size-14 items-center justify-center rounded-full bg-selected text-ink enabled:hover:bg-line-strong"
+        class="col-start-2 row-start-1 flex size-14 items-center justify-center rounded-full bg-selected text-ink enabled:hover:bg-line-strong"
         :disabled="busy"
         :aria-label="primaryLabel"
         :title="primaryLabel"
@@ -80,17 +84,27 @@ const interruption = computed(() =>
       </button>
       <button
         v-if="current"
-        class="icon-button !size-8"
+        class="icon-button pointer-events-none col-start-3 row-start-1 !size-8 opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:disabled:opacity-50"
         :disabled="busy"
         :aria-label="isBreak ? copy.nextFocus : copy.takeBreak"
         :title="isBreak ? copy.nextFocus : copy.takeBreak"
         @click="emit('action', 'switch')"
       >
-        <Play v-if="isBreak" :size="17" /><Coffee v-else :size="18" />
+        <SkipForward v-if="isBreak" :size="17" /><CoffeeCupIcon v-else class="size-[18px]" />
       </button>
     </div>
-    <p v-if="interruption" class="mt-2 text-xs leading-snug text-muted" role="status">
+    <p
+      v-if="interruption"
+      class="absolute inset-x-5 bottom-2 text-xs leading-snug text-muted"
+      role="status"
+    >
       {{ interruption }}
     </p>
+    <CancelSessionDialog
+      ref="cancellation"
+      :session="current"
+      :busy="busy"
+      :cancel-session="cancelSession"
+    />
   </section>
 </template>

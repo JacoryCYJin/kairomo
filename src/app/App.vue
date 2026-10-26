@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ChartNoAxesColumnIncreasing, SlidersHorizontal, X } from 'lucide-vue-next';
 import TimerView from '../features/timer/TimerView.vue';
 import HistoryView from '../features/history/HistoryView.vue';
@@ -15,21 +15,49 @@ const shell = ref<HTMLElement | null>(null);
 const k = useKairomo();
 const { state, records, ready, busy, error, notice } = k;
 const media = window.matchMedia('(prefers-color-scheme: dark)');
-const dark = ref(media.matches);
+const systemDark = ref(media.matches);
+const dark = computed(
+  () =>
+    state.value.settings.appearance === 'dark' ||
+    (state.value.settings.appearance === 'system' && systemDark.value),
+);
+watch(
+  dark,
+  (value) => {
+    document.documentElement.dataset.theme = value ? 'dark' : 'light';
+  },
+  { immediate: true },
+);
+watch([ready, () => state.value.settings.appearance, dark], () => {
+  if (ready.value)
+    void syncAppearance(
+      state.value.settings.appearance,
+      getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+    ).catch(() => {
+      error.value = copy.value.appearanceError;
+    });
+});
 let disposed = false;
 let unlisten: (() => void) | undefined;
 function resetTimerFocus() {
   if (auxiliary) return;
   void nextTick(() => {
-    if (!disposed) shell.value?.focus({ preventScroll: true });
+    if (!disposed && !document.querySelector('dialog[open]'))
+      shell.value?.focus({ preventScroll: true });
   });
 }
 function applyTheme() {
-  dark.value = media.matches;
-  void syncAppearance(media.matches).catch(() => {});
+  systemDark.value = media.matches;
 }
 function drag(event: MouseEvent) {
-  if (auxiliary || !desktop || event.button !== 0 || event.detail !== 1) return;
+  if (
+    auxiliary ||
+    !desktop ||
+    event.button !== 0 ||
+    event.detail !== 1 ||
+    document.querySelector('dialog[open]')
+  )
+    return;
   const target = event.target;
   if (
     !(target instanceof Element) ||
@@ -42,7 +70,21 @@ function drag(event: MouseEvent) {
   });
 }
 function hide(event: KeyboardEvent) {
-  if (event.key === 'Escape' && !auxiliary && desktop) void api.hidePopup();
+  if (
+    event.key === 'Escape' &&
+    !event.defaultPrevented &&
+    !document.querySelector('dialog[open]') &&
+    !auxiliary &&
+    desktop
+  )
+    void hideTimer();
+}
+async function hideTimer() {
+  try {
+    await api.hidePopup();
+  } catch {
+    error.value = copy.value.error;
+  }
 }
 async function open(view: 'history' | 'settings') {
   try {
@@ -85,16 +127,26 @@ onUnmounted(() => {
     :class="
       auxiliary
         ? 'details-shell mx-auto max-w-[820px]'
-        : 'timer-shell relative h-screen select-none overflow-auto focus:outline-none'
+        : 'timer-shell group relative h-screen select-none overflow-auto focus:outline-none'
     "
     :tabindex="auxiliary ? undefined : -1"
     @mousedown="drag"
   >
-    <header v-if="!auxiliary" class="flex h-12 items-center justify-between pl-5 pr-3.5 pt-2.5">
-      <span class="text-sm font-medium text-muted">Kairomo</span>
+    <header
+      v-if="!auxiliary"
+      class="absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-between px-3.5 pt-2.5"
+    >
+      <button
+        class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+        :aria-label="copy.hideTimer"
+        :title="copy.hideTimer"
+        @click="hideTimer"
+      >
+        <X :size="15" />
+      </button>
       <div class="flex gap-0.5">
         <button
-          class="icon-button"
+          class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
           :aria-label="copy.history"
           :title="copy.history"
           @click="open('history')"
@@ -102,7 +154,7 @@ onUnmounted(() => {
           <ChartNoAxesColumnIncreasing :size="17" />
         </button>
         <button
-          class="icon-button"
+          class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
           :aria-label="copy.settings"
           :title="copy.settings"
           @click="open('settings')"
@@ -152,7 +204,14 @@ onUnmounted(() => {
         <X :size="14" />
       </button>
     </div>
-    <TimerView v-if="!auxiliary" :state="state" :busy="busy || !ready" @action="k.act($event)" />
+    <TimerView
+      v-if="!auxiliary"
+      :state="state"
+      :records="records"
+      :cancel-session="k.cancelSession"
+      :busy="busy || !ready"
+      @action="k.act($event)"
+    />
     <div v-else class="px-7 pb-6">
       <HistoryView
         v-if="view === 'history'"
@@ -160,6 +219,7 @@ onUnmounted(() => {
         :busy="busy || !ready"
         :current="state.current"
         :checkpoint="state.checkpoint_at_ms"
+        :series-id="state.settings.visual_series"
         @export="k.exportRecords"
         @remove="k.remove"
         @correct="k.correct"
@@ -168,8 +228,8 @@ onUnmounted(() => {
         v-else
         :settings="state.settings"
         :busy="busy || !ready"
-        :dark="dark"
         @save="k.configure"
+        @preference="k.preferences"
       />
     </div>
   </main>
