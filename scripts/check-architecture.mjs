@@ -1,6 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-const root = new URL('../', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const root = fileURLToPath(new URL('../', import.meta.url));
+const portable = (value) => value.split(path.sep).join('/');
 async function files(dir) {
   const out = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -13,7 +15,7 @@ async function files(dir) {
 const errors = [];
 for (const file of await files(path.join(root, 'src'))) {
   const text = await readFile(file, 'utf8');
-  const relative = path.relative(root, file);
+  const relative = portable(path.relative(root, file));
   if (
     !relative.startsWith('src/shared/ipc/') &&
     /(?:from\s*|import\s*\()['"]@tauri-apps\//.test(text)
@@ -21,9 +23,8 @@ for (const file of await files(path.join(root, 'src'))) {
     errors.push(`${relative}: desktop SDK must be accessed through shared/ipc`);
   const own = relative.match(/^src\/features\/([^/]+)/)?.[1];
   for (const match of text.matchAll(/(?:from\s*|import\s*\()['"]([^'"]+)['"]/g)) {
-    const target = path.relative(
-      path.join(root, 'src'),
-      path.resolve(path.dirname(file), match[1]),
+    const target = portable(
+      path.relative(path.join(root, 'src'), path.resolve(path.dirname(file), match[1])),
     );
     if (relative.startsWith('src/shared/') && /^(app|features)\//.test(target))
       errors.push(`${relative}: shared cannot depend on app/features`);
