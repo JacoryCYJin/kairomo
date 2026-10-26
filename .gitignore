@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+.dev/
+.DS_Store
+*.log
+*.db
+*.db-*
+*.sqlite*
+.env
+.env.*
+!.env.example
+src-tauri/gen/
+*.p12
+*.mobileprovision

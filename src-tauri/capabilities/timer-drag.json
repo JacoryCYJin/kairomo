@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "timer-drag",
+  "description": "Allow native dragging only for the timer window.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-start-dragging"
+  ]
+}
