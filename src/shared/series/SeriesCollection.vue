@@ -9,7 +9,6 @@ const props = withDefaults(
     seriesId?: SeriesId;
     records: Session[];
     total: number;
-    periodLabel: string | string[];
     fitHeight?: boolean;
   }>(),
   { seriesId: 'coffee', fitHeight: false },
@@ -17,11 +16,5 @@ const props = withDefaults(
 const component = computed(() => seriesRenderers[seriesFor(props.seriesId).id].collection);
 </script>
 <template>
-  <component
-    :is="component"
-    :records="records"
-    :total="total"
-    :period-label="periodLabel"
-    :fit-height="fitHeight"
-  />
+  <component :is="component" :records="records" :total="total" :fit-height="fitHeight" />
 </template>

@@ -9,7 +9,6 @@ const props = withDefaults(
   defineProps<{
     records: Session[];
     total: number;
-    periodLabel: string | string[];
     fitHeight?: boolean;
   }>(),
   { fitHeight: false },
@@ -17,9 +16,6 @@ const props = withDefaults(
 const visible = computed(() => props.records.slice(0, coffeeSeries.collection.displayLimit));
 const byId = computed(() => new Map(visible.value.map((record) => [record.id, record])));
 const { layout } = useCoffeeLayout(() => visible.value.map((record) => record.id));
-const periodLines = computed(() =>
-  typeof props.periodLabel === 'string' ? [props.periodLabel] : props.periodLabel,
-);
 const viewBox = computed(() => {
   const poses = layout.value?.poses ?? [];
   // Frame the jar and every visible bean, not unused space reserved for a full
@@ -118,13 +114,5 @@ function description(id: string) {
     <strong class="mt-3 shrink-0 text-xl font-medium tracking-tight tabular-nums">{{
       duration(total)
     }}</strong>
-    <p
-      class="mt-1 flex min-h-10 shrink-0 flex-col justify-center text-center text-xs leading-relaxed text-faint"
-      :aria-label="periodLines.join(' – ')"
-    >
-      <span v-for="(line, index) in periodLines" :key="index" class="block whitespace-nowrap"
-        >{{ index ? '– ' : '' }}{{ line }}</span
-      >
-    </p>
   </section>
 </template>

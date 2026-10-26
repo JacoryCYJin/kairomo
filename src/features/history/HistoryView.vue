@@ -106,10 +106,10 @@ function fullDate(date: Date) {
   return date.toLocaleDateString(locale.value, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 const periodLabel = computed(() => {
-  if (range.value === 'all') return [copy.value.allHistory];
+  if (range.value === 'all') return copy.value.allHistory;
   const first = new Date(period.value.start);
-  if (range.value === 'day') return [fullDate(first)];
-  return [fullDate(first), fullDate(new Date(period.value.end - 1))];
+  if (range.value === 'day') return fullDate(first);
+  return `${fullDate(first)} – ${fullDate(new Date(period.value.end - 1))}`;
 });
 function recordTime(session: Session) {
   const start = new Date(session.started_at_ms);
@@ -177,25 +177,24 @@ function submit() {
     <div
       class="mb-7 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 border-b border-line pb-5"
     >
-      <HistoryCalendar
-        :month="month"
-        :selected="anchor"
-        :today="dateInput(now)"
-        :period="period"
-        :records="sessions"
-        :checkpoint="checkpoint"
-        :all="range === 'all'"
-        @browse="month = $event"
-        @select="selectDate"
-        @today="selectDate(dateInput(new Date()))"
-      />
-      <SeriesCollection
-        :records="beans"
-        :series-id="seriesId"
-        :total="total"
-        :period-label="periodLabel"
-        fit-height
-      />
+      <div class="flex min-w-0 flex-col" data-history-calendar-column>
+        <HistoryCalendar
+          :month="month"
+          :selected="anchor"
+          :today="dateInput(now)"
+          :period="period"
+          :records="sessions"
+          :checkpoint="checkpoint"
+          :all="range === 'all'"
+          @browse="month = $event"
+          @select="selectDate"
+          @today="selectDate(dateInput(new Date()))"
+        />
+        <p class="mt-3 whitespace-nowrap text-xs leading-relaxed text-faint" data-history-period>
+          {{ periodLabel }}
+        </p>
+      </div>
+      <SeriesCollection :records="beans" :series-id="seriesId" :total="total" fit-height />
     </div>
     <div class="mb-2 flex items-center justify-between">
       <span class="eyebrow">{{ copy.historyEntries }}</span

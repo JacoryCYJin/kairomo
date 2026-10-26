@@ -71,12 +71,7 @@ const caption = computed(() =>
         <h2 class="mb-2 text-center text-sm font-medium">
           {{ n }} {{ locale === 'zh-CN' ? '颗' : 'beans' }}
         </h2>
-        <SeriesCollection
-          series-id="coffee"
-          :records="seriesFixtures(n)"
-          :total="total(n)"
-          :period-label="locale === 'zh-CN' ? '全部测试记录' : 'All test sessions'"
-        />
+        <SeriesCollection series-id="coffee" :records="seriesFixtures(n)" :total="total(n)" />
       </section>
     </div>
     <div
@@ -84,12 +79,7 @@ const caption = computed(() =>
       class="mx-auto w-full max-w-[400px]"
       :data-preview-count="count"
     >
-      <SeriesCollection
-        series-id="coffee"
-        :records="records"
-        :total="total(count)"
-        :period-label="caption"
-      />
+      <SeriesCollection series-id="coffee" :records="records" :total="total(count)" />
     </div>
     <div v-else class="mx-auto max-w-[620px]">
       <HistoryView

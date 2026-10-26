@@ -49,13 +49,16 @@ function description(day: Date) {
 <template>
   <section :aria-label="copy.calendar" class="min-w-0">
     <div class="mb-4 flex items-center justify-between gap-1">
-      <span class="text-sm font-medium">{{ heading }}</span>
-      <div class="flex items-center gap-0.5">
+      <span class="whitespace-nowrap text-sm font-medium">{{ heading }}</span>
+      <div class="flex shrink-0 items-center gap-0.5">
         <button class="icon-button !size-7" :aria-label="copy.previousMonth" @click="browse(-1)">
           <ChevronLeft :size="15" />
         </button>
         <button class="icon-button !size-7" :aria-label="copy.nextMonth" @click="browse(1)">
           <ChevronRight :size="15" />
+        </button>
+        <button class="text-button ml-1 whitespace-nowrap" @click="emit('today')">
+          {{ copy.backToday }}
         </button>
       </div>
     </div>
@@ -96,6 +99,5 @@ function description(day: Date) {
         ></span>
       </button>
     </div>
-    <button class="text-button mt-3" @click="emit('today')">{{ copy.backToday }}</button>
   </section>
 </template>
