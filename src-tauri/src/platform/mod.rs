@@ -9,6 +9,18 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 use timer_core::{Kind, Phase, Snapshot};
 pub mod windows;
+pub async fn sync_window_appearance(
+    window: tauri::WebviewWindow,
+    appearance: timer_core::Appearance,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    return macos::sync_window_appearance(window, appearance).await;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, appearance);
+        Ok(())
+    }
+}
 pub fn show(app: &tauri::AppHandle) {
     windows::show(app);
 }
@@ -86,6 +98,12 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 }
 pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
     if let Some(tray) = app.tray_by_id("timer") {
+        let resting = state
+            .current
+            .as_ref()
+            .is_some_and(|session| session.kind == Kind::Break);
+        #[cfg(target_os = "macos")]
+        update_tray_icon(&tray, resting);
         let label = if let Some(s) = &state.current {
             let seconds = if s.duration_ms >= s.target_ms {
                 (s.duration_ms - s.target_ms) / 1000
@@ -93,12 +111,7 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
                 (s.target_ms - s.duration_ms).div_ceil(1000)
             };
             format!(
-                "{}{}{:02}:{:02}",
-                if state.phase == Phase::Paused {
-                    "Ⅱ "
-                } else {
-                    ""
-                },
+                "{}{:02}:{:02}",
                 if s.duration_ms >= s.target_ms {
                     "+"
                 } else {
@@ -112,7 +125,13 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
         };
         #[cfg(target_os = "macos")]
         let _ = tray.set_title(Some(&label));
-        let _ = tray.set_tooltip(Some(format!("Kairomo {label}")));
+        let stage = match (resting, state.settings.locale.as_str()) {
+            (true, "zh-CN") => "休息",
+            (false, "zh-CN") => "专注",
+            (true, _) => "Rest",
+            (false, _) => "Focus",
+        };
+        let _ = tray.set_tooltip(Some(format!("Kairomo · {stage} · {label}")));
     }
     if reached && state.settings.notifications {
         let focus = state
@@ -135,5 +154,25 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
         {
             let _ = app.emit("notification:error", error.to_string());
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn update_tray_icon(tray: &tauri::tray::TrayIcon, resting: bool) {
+    static LAST_STYLE: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+    let Ok(mut previous) = LAST_STYLE.lock() else {
+        return;
+    };
+    if *previous == Some(resting) {
+        return;
+    }
+    let icon = if resting {
+        tauri::include_image!("icons/tray-rest.png")
+    } else {
+        tauri::include_image!("icons/tray.png")
+    };
+    // Templates follow macOS menu-bar contrast; the rest icon retains its amber color.
+    if tray.set_icon_with_as_template(Some(icon), !resting).is_ok() {
+        *previous = Some(resting);
     }
 }

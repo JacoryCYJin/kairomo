@@ -1,6 +1,8 @@
+import { isCompletedFocus } from '../../shared/completions.ts';
 import type { Session } from '../../shared/ipc/types';
 
-export type HistoryRange = 'day' | 'week' | 'month' | 'all';
+export type HistoryRange = 'day' | 'week' | 'month' | 'year' | 'all';
+export type HistoryFilter = HistoryRange | 'custom';
 export interface Period {
   start: number;
   end: number;
@@ -28,14 +30,17 @@ export function periodFor(range: HistoryRange, anchor: Date): Period {
   if (range === 'all') return { start: -Infinity, end: Infinity };
   if (range === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
   if (range === 'month') start.setDate(1);
+  if (range === 'year') start.setMonth(0, 1);
   const end = new Date(start);
-  if (range === 'month') end.setMonth(end.getMonth() + 1);
+  if (range === 'year') end.setFullYear(end.getFullYear() + 1);
+  else if (range === 'month') end.setMonth(end.getMonth() + 1);
   else end.setDate(end.getDate() + (range === 'week' ? 7 : 1));
   return { start: start.getTime(), end: end.getTime() };
 }
 export function shiftPeriod(range: HistoryRange, anchor: Date, direction: number): Date {
   const start = new Date(periodFor(range === 'all' ? 'day' : range, anchor).start);
-  if (range === 'month') start.setMonth(start.getMonth() + direction);
+  if (range === 'year') start.setFullYear(start.getFullYear() + direction);
+  else if (range === 'month') start.setMonth(start.getMonth() + direction);
   else start.setDate(start.getDate() + direction * (range === 'week' ? 7 : 1));
   return start;
 }
@@ -78,7 +83,13 @@ export function recordStartInPeriod(session: Session, period: Period, checkpoint
 
 export function historyRecords(sessions: Session[], period: Period, checkpoint: number): Session[] {
   return sessions
-    .filter((session) => inPeriod(session, period, checkpoint))
+    .filter(
+      (session) =>
+        inPeriod(session, period, checkpoint) ||
+        (isCompletedFocus(session) &&
+          session.ended_at_ms! >= period.start &&
+          session.ended_at_ms! < period.end),
+    )
     .sort((a, b) => b.started_at_ms - a.started_at_ms || b.id.localeCompare(a.id));
 }
 export function totalInPeriod(
@@ -101,7 +112,7 @@ export function historyBuckets(
   const period = periodFor(range, anchor);
   let cursor = new Date(period.start);
   let limit = period.end;
-  let unit: HistoryBucket['unit'] = range === 'day' ? 'hour' : 'day';
+  let unit: HistoryBucket['unit'] = range === 'day' ? 'hour' : range === 'year' ? 'month' : 'day';
   if (range === 'all') {
     if (!sessions.length) return [];
     const first = sessions.reduce((earliest, s) => Math.min(earliest, s.started_at_ms), Infinity);
@@ -140,4 +151,30 @@ export function historyBuckets(
     cursor = end;
   }
   return buckets;
+}
+
+/** Inclusive local dates, represented internally as a half-open interval. */
+export function customPeriod(from: string, to: string): Period | null {
+  const start = parseDateInput(from),
+    last = parseDateInput(to);
+  if (!start || !last || start > last) return null;
+  const end = new Date(last);
+  end.setDate(end.getDate() + 1);
+  return { start: start.getTime(), end: end.getTime() };
+}
+export function monthGrid(month: Date): Date[] {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  first.setDate(1 - ((first.getDay() + 6) % 7));
+  return Array.from(
+    { length: 42 },
+    (_, index) => new Date(first.getFullYear(), first.getMonth(), first.getDate() + index),
+  );
+}
+/** Each completed focus earns exactly one bean, on its local completion date. */
+export function earnedBeans(records: readonly Session[], period: Period): Session[] {
+  return records
+    .filter(
+      (s) => isCompletedFocus(s) && s.ended_at_ms! >= period.start && s.ended_at_ms! < period.end,
+    )
+    .sort((a, b) => a.ended_at_ms! - b.ended_at_ms! || a.id.localeCompare(b.id));
 }

@@ -1,11 +1,16 @@
+import type { SeriesId } from '../series/types';
 export type Kind = 'focus' | 'break';
 export type Phase = 'idle' | 'running' | 'paused';
+export type Appearance = 'system' | 'light' | 'dark';
 export interface Settings {
   focus_minutes: number;
   break_minutes: number;
   locale: 'zh-CN' | 'en-US';
   notifications: boolean;
+  appearance: Appearance;
+  visual_series: SeriesId;
 }
+export type Preferences = Pick<Settings, 'locale' | 'appearance' | 'visual_series'>;
 export interface Interval {
   started_at_ms: number;
   ended_at_ms: number | null;

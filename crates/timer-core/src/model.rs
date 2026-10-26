@@ -15,12 +15,29 @@ pub enum Phase {
     Paused,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+fn default_visual_series() -> String {
+    "coffee".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub focus_minutes: u32,
     pub break_minutes: u32,
     pub locale: String,
     pub notifications: bool,
+    #[serde(default)]
+    pub appearance: Appearance,
+    #[serde(default = "default_visual_series")]
+    pub visual_series: String,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -29,6 +46,8 @@ impl Default for Settings {
             break_minutes: 10,
             locale: "zh-CN".into(),
             notifications: true,
+            appearance: Appearance::System,
+            visual_series: default_visual_series(),
         }
     }
 }
@@ -39,6 +58,9 @@ impl Settings {
         }
         if !["zh-CN", "en-US"].contains(&self.locale.as_str()) {
             return Err(TimerError::InvalidLocale);
+        }
+        if self.visual_series != "coffee" {
+            return Err(TimerError::InvalidSeries);
         }
         Ok(())
     }
@@ -96,6 +118,8 @@ pub enum TimerError {
     InvalidTransition,
     #[error("invalid_duration")]
     InvalidDuration,
+    #[error("invalid_series")]
+    InvalidSeries,
     #[error("invalid_locale")]
     InvalidLocale,
     #[error("title_too_long")]

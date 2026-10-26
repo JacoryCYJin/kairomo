@@ -60,8 +60,13 @@ pub fn hide(app: &tauri::AppHandle) {
     dispatch(app, hide_on_main);
 }
 fn hide_on_main(app: &tauri::AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("window_unavailable")?;
-    window.hide().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    super::macos::hide_popup(app)?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let window = app.get_webview_window("main").ok_or("window_unavailable")?;
+        window.hide().map_err(|e| e.to_string())?;
+    }
     trace(app, "hidden explicitly");
     Ok(())
 }
@@ -69,8 +74,13 @@ pub fn toggle(app: &tauri::AppHandle) {
     dispatch(app, toggle_on_main);
 }
 fn toggle_on_main(app: &tauri::AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("window_unavailable")?;
-    let visible = window.is_visible().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let visible = super::macos::popup_visible(app)?;
+    #[cfg(not(target_os = "macos"))]
+    let visible = {
+        let window = app.get_webview_window("main").ok_or("window_unavailable")?;
+        window.is_visible().map_err(|e| e.to_string())?
+    };
     trace(app, &format!("toggle visible={visible}"));
     if visible {
         hide_on_main(app)
@@ -120,8 +130,13 @@ fn show_on_main(app: &tauri::AppHandle) -> Result<(), String> {
             window.set_position(point).map_err(|e| e.to_string())?;
         }
     }
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    super::macos::show_popup(app)?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
     window.emit("timer:opened", ()).map_err(|e| e.to_string())?;
     trace(
         app,

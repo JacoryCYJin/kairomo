@@ -6,7 +6,10 @@ use std::{sync::Mutex, time::Duration};
 use tauri::{Emitter, Manager};
 
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+    let app = builder
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             platform::show(app)
         }))
@@ -54,7 +57,11 @@ pub fn run() {
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    platform::windows::hide(window.app_handle());
+                } else {
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -63,8 +70,11 @@ pub fn run() {
             commands::hide_popup,
             commands::snapshot,
             commands::timer_action,
+            commands::cancel_session,
             commands::sessions,
             commands::save_settings,
+            commands::save_preferences,
+            commands::sync_window_appearance,
             commands::delete_session,
             commands::correct_session,
             commands::export_csv

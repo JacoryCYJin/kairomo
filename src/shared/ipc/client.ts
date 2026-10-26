@@ -1,7 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
-import type { Action, Session, Settings, Snapshot } from './types';
+import type { Action, Preferences, Session, Settings, Snapshot } from './types';
 export const desktop = isTauri();
 export const api = {
   onTimerOpened: (handler: () => void) => listen('timer:opened', handler),
@@ -13,7 +13,14 @@ export const api = {
   snapshot: () => invoke<Snapshot>('snapshot'),
   sessions: () => invoke<Session[]>('sessions'),
   action: (action: Action, title: string) => invoke<Snapshot>('timer_action', { action, title }),
+  cancelSession: (expectedId: string) => invoke<Snapshot>('cancel_session', { expectedId }),
   settings: (settings: Settings) => invoke<Snapshot>('save_settings', { settings }),
+  preferences: (preferences: Partial<Preferences>) =>
+    invoke<Snapshot>('save_preferences', {
+      locale: preferences.locale,
+      appearance: preferences.appearance,
+      visualSeries: preferences.visual_series,
+    }),
   delete: (id: string) => invoke<void>('delete_session', { id }),
   correct: (id: string, title: string, minutes: number) =>
     invoke<void>('correct_session', { id, title, minutes }),

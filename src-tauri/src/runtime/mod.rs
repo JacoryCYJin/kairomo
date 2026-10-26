@@ -80,6 +80,12 @@ impl Runtime {
         }
         Ok((self.commit(next, &[], measured)?, reached))
     }
+    pub fn cancel_session(&mut self, expected_id: &str) -> Result<Snapshot, String> {
+        let (mut next, _, measured) = self.advanced();
+        next.cancel(expected_id, now_ms())
+            .map_err(|e| e.to_string())?;
+        self.commit(next, &[], measured)
+    }
     pub fn action(&mut self, action: &str, title: &str) -> Result<Snapshot, String> {
         let (mut next, _, measured) = self.advanced();
         let now = now_ms();
@@ -122,6 +128,25 @@ impl Runtime {
         let (mut next, _, measured) = self.advanced();
         next.configure(settings).map_err(|e| e.to_string())?;
         self.commit(next, &[], measured)
+    }
+    pub fn preferences(
+        &mut self,
+        locale: Option<String>,
+        appearance: Option<timer_core::Appearance>,
+        visual_series: Option<String>,
+    ) -> Result<Snapshot, String> {
+        // Merge under the runtime lock so another window's saved values cannot be overwritten.
+        let mut settings = self.engine.state.settings.clone();
+        if let Some(locale) = locale {
+            settings.locale = locale;
+        }
+        if let Some(appearance) = appearance {
+            settings.appearance = appearance;
+        }
+        if let Some(visual_series) = visual_series {
+            settings.visual_series = visual_series;
+        }
+        self.configure(settings)
     }
     pub fn correct(&mut self, id: &str, title: &str, minutes: f64) -> Result<(), String> {
         if title.chars().count() > 160 {
@@ -243,6 +268,76 @@ mod tests {
         });
     }
     #[test]
+    fn ending_a_short_paused_break_immediately_starts_focus_and_saves_rest() {
+        with_runtime(|rt, _| {
+            rt.action("start", "Read").unwrap();
+            rt.last_tick = Instant::now() - std::time::Duration::from_secs(1);
+            rt.action("switch", "").unwrap();
+            rt.last_tick = Instant::now() - std::time::Duration::from_secs(2);
+            rt.action("pause", "").unwrap();
+            let next = rt.action("switch", "").unwrap();
+            assert_eq!(next.phase, Phase::Running);
+            let current = next.current.unwrap();
+            assert_eq!(current.kind, timer_core::Kind::Focus);
+            assert_eq!(current.duration_ms, 0);
+            let records = rt.repository.sessions().unwrap();
+            assert_eq!(records.len(), 2);
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|s| s.kind == timer_core::Kind::Focus)
+                    .count(),
+                1
+            );
+            let rest = records
+                .iter()
+                .find(|s| s.kind == timer_core::Kind::Break)
+                .unwrap();
+            assert!(rest.duration_ms >= 2000 && rest.duration_ms < rest.target_ms);
+            assert!(rest.ended_at_ms.is_some());
+        });
+    }
+    #[test]
+    fn preferences_preserve_timer_settings_and_active_session() {
+        with_runtime(|rt, path| {
+            rt.configure(Settings {
+                focus_minutes: 33,
+                break_minutes: 7,
+                notifications: false,
+                ..Settings::default()
+            })
+            .unwrap();
+            rt.action("start", "Read").unwrap();
+            let session_id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.preferences(Some("en-US".into()), None, None).unwrap();
+            rt.preferences(None, Some(timer_core::Appearance::Dark), None)
+                .unwrap();
+            assert!(rt.preferences(Some("invalid".into()), None, None).is_err());
+            rt.preferences(None, None, Some("coffee".into())).unwrap();
+            let revision = rt.engine.state.revision;
+            assert!(rt.preferences(None, None, Some("money".into())).is_err());
+            assert_eq!(rt.engine.state.revision, revision);
+            let state = &rt.engine.state;
+            assert_eq!(state.settings.visual_series, "coffee");
+            assert_eq!(state.settings.locale, "en-US");
+            assert_eq!(state.settings.appearance, timer_core::Appearance::Dark);
+            assert_eq!(state.settings.focus_minutes, 33);
+            assert_eq!(state.settings.break_minutes, 7);
+            assert!(!state.settings.notifications);
+            assert_eq!(state.phase, Phase::Running);
+            let current = state.current.as_ref().unwrap();
+            assert_eq!(current.id, session_id);
+            assert_eq!(current.target_ms, 33 * 60_000);
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(restored.engine.state.settings.locale, "en-US");
+            assert_eq!(restored.engine.state.settings.visual_series, "coffee");
+            assert_eq!(
+                restored.engine.state.settings.appearance,
+                timer_core::Appearance::Dark
+            );
+        });
+    }
+    #[test]
     fn failed_persistence_does_not_advance_shared_state() {
         with_runtime(|rt, _| {
             rt.action("start", "task").unwrap();
@@ -256,6 +351,28 @@ mod tests {
             assert!(rt.commit(next, &[record], Instant::now()).is_err());
             assert_eq!(rt.engine.state.phase, Phase::Running);
             assert_eq!(rt.engine.state.revision, revision);
+        });
+    }
+    #[test]
+    fn cancellation_persists_idle_without_saving_or_deleting_history() {
+        with_runtime(|rt, path| {
+            rt.action("start", "completed").unwrap();
+            rt.action("switch", "").unwrap();
+            let rest_id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.action("pause", "").unwrap();
+            let revision = rt.engine.state.revision;
+            assert!(rt.cancel_session("stale").is_err());
+            assert_eq!(rt.engine.state.revision, revision);
+            assert_eq!(rt.repository.sessions().unwrap().len(), 1);
+            rt.cancel_session(&rest_id).unwrap();
+            assert_eq!(rt.repository.sessions().unwrap().len(), 1);
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(restored.engine.state.phase, Phase::Idle);
+            assert!(restored.engine.state.current.is_none());
+            rt.action("start", "discarded focus").unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.cancel_session(&id).unwrap();
+            assert_eq!(rt.repository.sessions().unwrap().len(), 1);
         });
     }
 }

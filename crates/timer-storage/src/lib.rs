@@ -118,6 +118,53 @@ mod tests {
         assert!(repo.load_checkpoint().unwrap().unwrap().current.is_none());
     }
     #[test]
+    fn legacy_checkpoint_loads_with_system_appearance_and_keeps_records() {
+        let mut repo = db();
+        let mut engine = Engine::default();
+        engine.start("legacy".into(), "阅读".into(), 1000).unwrap();
+        engine.advance(30_000, 31_000);
+        let record = engine.finish(31_000).unwrap();
+        repo.persist(&engine.state, std::slice::from_ref(&record))
+            .unwrap();
+        let mut legacy = serde_json::to_value(&engine.state).unwrap();
+        legacy["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("visual_series");
+        legacy["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("appearance");
+        repo.connection
+            .execute(
+                "UPDATE checkpoint SET state=?1 WHERE id=1",
+                [legacy.to_string()],
+            )
+            .unwrap();
+        let state = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(state.settings.appearance, timer_core::Appearance::System);
+        assert_eq!(state.settings.visual_series, "coffee");
+        assert_eq!(repo.sessions().unwrap()[0].id, record.id);
+    }
+    #[test]
+    fn language_and_all_appearance_modes_survive_reopen() {
+        let mut repo = db();
+        for appearance in [
+            timer_core::Appearance::System,
+            timer_core::Appearance::Light,
+            timer_core::Appearance::Dark,
+        ] {
+            let mut state = Snapshot::default();
+            state.settings.locale = "en-US".into();
+            state.settings.appearance = appearance.clone();
+            repo.persist(&state, &[]).unwrap();
+            repo = SqliteRepository::from_connection(repo.connection).unwrap();
+            let loaded = repo.load_checkpoint().unwrap().unwrap();
+            assert_eq!(loaded.settings.locale, "en-US");
+            assert_eq!(loaded.settings.appearance, appearance);
+        }
+    }
+    #[test]
     fn migration_reopens_without_losing_data() {
         let conn = Connection::open_in_memory().unwrap();
         let repo = SqliteRepository::from_connection(conn).unwrap();
