@@ -97,6 +97,7 @@ impl Runtime {
         .map_err(|e| e.to_string())?;
         self.commit(next, &completed, measured)
     }
+    #[cfg(any(target_os = "macos", test))]
     pub fn sleep(&mut self) -> Result<(), String> {
         if self.engine.state.phase == Phase::Running {
             let (mut next, _, measured) = self.advanced();
