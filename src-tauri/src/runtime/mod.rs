@@ -628,6 +628,20 @@ mod tests {
         });
     }
     #[test]
+    fn japanese_preferences_survive_reopen_and_keep_active_session() {
+        with_runtime(|rt, path| {
+            rt.action("start", "読む").unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.preferences(Some("ja-JP".into()), None, None).unwrap();
+            assert_eq!(rt.engine.state.settings.locale, "ja-JP");
+            assert_eq!(rt.engine.state.current.as_ref().unwrap().id, id);
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(restored.engine.state.settings.locale, "ja-JP");
+            assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
+            assert!(rt.preferences(Some("fr-FR".into()), None, None).is_err());
+        });
+    }
+    #[test]
     fn failed_persistence_does_not_advance_shared_state() {
         with_runtime(|rt, _| {
             rt.action("start", "task").unwrap();

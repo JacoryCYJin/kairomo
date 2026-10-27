@@ -2,7 +2,7 @@ import type { SeriesDefinition, SeriesName } from '../types';
 const minute = 60_000;
 export const coffeeSeries = {
   id: 'coffee',
-  name: { 'zh-CN': '咖啡豆', 'en-US': 'Coffee beans' },
+  name: { 'zh-CN': '咖啡豆', 'en-US': 'Coffee beans', 'ja-JP': 'コーヒー豆' },
   summary: { limit: 6, replace: 'shortest' },
   collection: { insideCapacity: 80, displayLimit: 120 },
   rest: {
@@ -31,28 +31,33 @@ export const coffeeSeries = {
   },
   // Product thresholds adapted from the City → Vienna development segment, anchored at 60 min.
   tiers: [
-    { from: 0, name: { 'zh-CN': '浅烘', 'en-US': 'Light' }, light: '#D8B89B', dark: '#E1C6AA' },
+    {
+      from: 0,
+      name: { 'zh-CN': '浅烘', 'en-US': 'Light', 'ja-JP': '浅煎り' },
+      light: '#D8B89B',
+      dark: '#E1C6AA',
+    },
     {
       from: 16 * minute,
-      name: { 'zh-CN': '中浅烘', 'en-US': 'Medium-light' },
+      name: { 'zh-CN': '中浅烘', 'en-US': 'Medium-light', 'ja-JP': '中浅煎り' },
       light: '#C49A76',
       dark: '#D4B18D',
     },
     {
       from: 32 * minute,
-      name: { 'zh-CN': '中烘', 'en-US': 'Medium' },
+      name: { 'zh-CN': '中烘', 'en-US': 'Medium', 'ja-JP': '中煎り' },
       light: '#AD7C56',
       dark: '#C49972',
     },
     {
       from: 44 * minute,
-      name: { 'zh-CN': '中深烘', 'en-US': 'Medium-dark' },
+      name: { 'zh-CN': '中深烘', 'en-US': 'Medium-dark', 'ja-JP': '中深煎り' },
       light: '#8B5B3B',
       dark: '#B2825B',
     },
     {
       from: 60 * minute,
-      name: { 'zh-CN': '深烘', 'en-US': 'Dark' },
+      name: { 'zh-CN': '深烘', 'en-US': 'Dark', 'ja-JP': '深煎り' },
       light: '#6B4028',
       dark: '#A36F4A',
     },

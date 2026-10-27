@@ -245,19 +245,21 @@ mod tests {
     #[test]
     fn language_and_all_appearance_modes_survive_reopen() {
         let mut repo = db();
-        for appearance in [
-            timer_core::Appearance::System,
-            timer_core::Appearance::Light,
-            timer_core::Appearance::Dark,
-        ] {
-            let mut state = Snapshot::default();
-            state.settings.locale = "en-US".into();
-            state.settings.appearance = appearance.clone();
-            repo.persist(&state, &[]).unwrap();
-            repo = SqliteRepository::from_connection(repo.connection).unwrap();
-            let loaded = repo.load_checkpoint().unwrap().unwrap();
-            assert_eq!(loaded.settings.locale, "en-US");
-            assert_eq!(loaded.settings.appearance, appearance);
+        for locale in ["zh-CN", "en-US", "ja-JP"] {
+            for appearance in [
+                timer_core::Appearance::System,
+                timer_core::Appearance::Light,
+                timer_core::Appearance::Dark,
+            ] {
+                let mut state = Snapshot::default();
+                state.settings.locale = locale.into();
+                state.settings.appearance = appearance.clone();
+                repo.persist(&state, &[]).unwrap();
+                repo = SqliteRepository::from_connection(repo.connection).unwrap();
+                let loaded = repo.load_checkpoint().unwrap().unwrap();
+                assert_eq!(loaded.settings.locale, locale);
+                assert_eq!(loaded.settings.appearance, appearance);
+            }
         }
     }
     #[test]

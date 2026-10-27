@@ -1,3 +1,4 @@
+mod language;
 #[cfg(target_os = "macos")]
 mod macos;
 use crate::runtime::AppState;
@@ -9,6 +10,12 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 use timer_core::{Kind, Phase, Snapshot, TargetReached};
 pub mod windows;
+struct TrayMenu {
+    open: MenuItem<tauri::Wry>,
+    toggle: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+    locale: std::sync::Mutex<String>,
+}
 pub async fn sync_window_appearance(
     window: tauri::WebviewWindow,
     appearance: timer_core::Appearance,
@@ -26,28 +33,39 @@ pub fn show(app: &tauri::AppHandle) {
 }
 pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let name = app.config().product_name.as_deref().unwrap_or("Kairomo");
+    let locale = app
+        .state::<AppState>()
+        .0
+        .lock()
+        .map_err(|_| std::io::Error::other("runtime_unavailable"))?
+        .engine
+        .state
+        .settings
+        .locale
+        .clone();
+    let copy = language::text(&locale);
     let open = MenuItem::with_id(
         app,
         "open",
-        format!("打开 {name} / Open"),
+        copy.open.replace("{app}", name),
         true,
         None::<&str>,
     )?;
-    let pause = MenuItem::with_id(
-        app,
-        "toggle",
-        "暂停 / 继续 · Pause / Resume",
-        true,
-        None::<&str>,
-    )?;
+    let pause = MenuItem::with_id(app, "toggle", copy.pause_resume, true, None::<&str>)?;
     let quit = MenuItem::with_id(
         app,
         "quit",
-        format!("退出 {name} / Quit"),
+        copy.quit.replace("{app}", name),
         true,
         None::<&str>,
     )?;
     let menu = Menu::with_items(app, &[&open, &pause, &quit])?;
+    app.manage(TrayMenu {
+        open,
+        toggle: pause,
+        quit,
+        locale: std::sync::Mutex::new(locale),
+    });
     let mut tray = TrayIconBuilder::with_id("timer")
         .tooltip(format!("{name} — Time for what matters"))
         .menu(&menu)
@@ -121,6 +139,22 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 }
 pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: Option<TargetReached>) {
     if let Some(tray) = app.tray_by_id("timer") {
+        let copy = language::text(&state.settings.locale);
+        if let Some(menu) = app.try_state::<TrayMenu>() {
+            if let Ok(mut locale) = menu.locale.lock() {
+                if *locale != state.settings.locale {
+                    let name = app.config().product_name.as_deref().unwrap_or("Kairomo");
+                    let updated = menu
+                        .open
+                        .set_text(copy.open.replace("{app}", name))
+                        .and_then(|_| menu.toggle.set_text(copy.pause_resume))
+                        .and_then(|_| menu.quit.set_text(copy.quit.replace("{app}", name)));
+                    if updated.is_ok() {
+                        *locale = state.settings.locale.clone();
+                    }
+                }
+            }
+        }
         let resting = state
             .current
             .as_ref()
@@ -151,27 +185,19 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: Option<TargetRe
                 0
             },
         );
-        let stage = match (resting, state.settings.locale.as_str()) {
-            (true, "zh-CN") => "休息",
-            (false, "zh-CN") => "专注",
-            (true, _) => "Rest",
-            (false, _) => "Focus",
-        };
+        let stage = if resting { copy.rest } else { copy.focus };
         let _ = tray.set_tooltip(Some(format!("Kairomo · {stage} · {label}")));
     }
     if let Some(event) = reached.filter(|_| state.settings.notifications) {
         let focus = event.kind == Kind::Focus;
         let completed = event.completed;
-        let zh = state.settings.locale == "zh-CN";
-        let body = match (focus, completed, zh) {
-            (true, true, true) => "本轮专注已完成。准备好后点击开始休息。",
-            (true, true, false) => "Focus complete. Start your break when ready.",
-            (true, false, true) => "已达到专注目标。继续计时，准备好后再休息。",
-            (true, false, false) => {
-                "Focus target reached. Still tracking — take a break when ready."
-            }
-            (false, _, true) => "休息已结束。准备好后点击开始专注。",
-            (false, _, false) => "Break complete. Start focus when you are ready.",
+        let copy = language::text(&state.settings.locale);
+        let body = if !focus {
+            copy.break_done
+        } else if completed {
+            copy.focus_done
+        } else {
+            copy.focus_target
         };
         if let Err(error) = app
             .notification()

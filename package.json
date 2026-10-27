@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "check": "vue-tsc --noEmit && eslint . && node scripts/check-architecture.mjs",
+    "check": "vue-tsc --noEmit && eslint . && node scripts/check-architecture.mjs && node scripts/check-i18n.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",

@@ -67,7 +67,7 @@ impl Settings {
         if !(1..=240).contains(&self.focus_minutes) || !(1..=120).contains(&self.break_minutes) {
             return Err(TimerError::InvalidDuration);
         }
-        if !["zh-CN", "en-US"].contains(&self.locale.as_str()) {
+        if !["zh-CN", "en-US", "ja-JP"].contains(&self.locale.as_str()) {
             return Err(TimerError::InvalidLocale);
         }
         if self.visual_series != "coffee" {

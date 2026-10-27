@@ -143,6 +143,7 @@ function choosePreference(key: keyof Preferences, value: string) {
               :options="[
                 { value: 'zh-CN', label: '简体中文' },
                 { value: 'en-US', label: 'English' },
+                { value: 'ja-JP', label: '日本語' },
               ]"
               @update:model-value="choosePreference('locale', $event)"
               :disabled="busy"
