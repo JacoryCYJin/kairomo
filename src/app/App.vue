@@ -10,11 +10,13 @@ import { api, desktop } from '../shared/ipc/client';
 import { syncAppearance } from '../shared/ipc/appearance';
 import { startWindowDrag, windowTitle } from '../shared/ipc/window';
 import { useKairomo } from './useKairomo';
+import { updates } from '../shared/ipc/updates';
 import { restThemeStyle } from '../shared/series/rest';
 const auxiliary = new URLSearchParams(window.location.search).has('view');
 const view = ref<'history' | 'settings'>('settings');
 const shell = ref<HTMLElement | null>(null);
 const title = ref('Kairomo');
+const development = ref(false);
 const k = useKairomo();
 const { state, records, ready, busy, error, notice, saved } = k;
 const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -103,6 +105,10 @@ async function open(view: 'history' | 'settings') {
 }
 onMounted(async () => {
   if (auxiliary) document.documentElement.classList.add('details-window');
+  if (!auxiliary && desktop) {
+    const info = await updates.info().catch(() => null);
+    if (!disposed) development.value = info?.channel === 'dev';
+  }
   if (auxiliary && desktop) title.value = await windowTitle().catch(() => 'Kairomo');
   applyTheme();
   media.addEventListener('change', applyTheme);
@@ -148,6 +154,11 @@ onUnmounted(() => {
       v-if="!auxiliary"
       class="absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-between px-3.5 pt-2.5"
     >
+      <span
+        v-if="development"
+        class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-xs font-medium tracking-widest text-muted"
+        >DEV</span
+      >
       <button
         class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         :aria-label="copy.hideTimer"

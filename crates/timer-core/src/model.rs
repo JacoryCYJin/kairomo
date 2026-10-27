@@ -99,6 +99,16 @@ pub struct Session {
     pub corrected: bool,
 }
 
+impl Session {
+    /// Eligibility for a newly completed record; historical reads and corrections keep their data.
+    pub fn is_recordable_focus(&self) -> bool {
+        self.kind == Kind::Focus
+            && self.ended_at_ms.is_some()
+            && !self.intervals.is_empty()
+            && self.duration_ms >= 60_000
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     #[serde(default)]
