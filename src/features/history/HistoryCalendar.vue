@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
-import { copy, locale, duration } from '../../shared/i18n';
+import { copy, locale, duration, formatBeanCount } from '../../shared/i18n';
 import { dateInput, monthGrid, periodFor, totalInPeriod } from './history';
 import { isCompletedFocus } from '../../shared/completions';
 import type { Period } from './history';
@@ -43,7 +43,7 @@ function inRange(day: Date) {
 function description(day: Date) {
   const key = dateInput(day),
     beans = counts.value.get(key) ?? 0;
-  return `${day.toLocaleDateString(locale.value)} · ${duration(totalInPeriod(props.records, 'focus', periodFor('day', day), props.checkpoint))} · ${beans} ${copy.value.beanCount}`;
+  return `${day.toLocaleDateString(locale.value)} · ${duration(totalInPeriod(props.records, 'focus', periodFor('day', day), props.checkpoint))} · ${formatBeanCount(beans)}`;
 }
 </script>
 <template>

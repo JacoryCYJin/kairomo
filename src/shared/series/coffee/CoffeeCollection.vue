@@ -5,7 +5,7 @@ import { compactOverflow } from './compactOverflow';
 import CollectionBean from './CollectionBean.vue';
 import { coffeeSeries, coffeeTier } from './definition';
 import { useCoffeeLayout } from './useCoffeeLayout';
-import { clock, copy, duration, locale } from '../../i18n';
+import { clock, copy, duration, locale, formatBeanCount } from '../../i18n';
 import type { Session } from '../../ipc/types';
 import { jarPath as jar } from './jarGeometry';
 const props = withDefaults(
@@ -46,7 +46,7 @@ function description(id: string) {
         viewBox="156 20 168 236"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        :aria-label="`${records.length} ${copy.beanCount}`"
+        :aria-label="formatBeanCount(records.length)"
         :aria-busy="!layout"
       >
         <defs>

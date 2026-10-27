@@ -1,5 +1,6 @@
+import type { AppLocale } from '../i18n';
 export type SeriesId = 'coffee';
-export type SeriesName = Readonly<Record<'zh-CN' | 'en-US', string>>;
+export type SeriesName = Readonly<Record<AppLocale, string>>;
 export interface RestPalette {
   readonly ink: string;
   readonly muted: string;

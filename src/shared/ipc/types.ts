@@ -1,3 +1,4 @@
+import type { AppLocale } from '../i18n';
 import type { SeriesId } from '../series/types';
 export type Kind = 'focus' | 'break';
 export type Phase = 'idle' | 'running' | 'paused';
@@ -6,7 +7,7 @@ export type FocusMode = 'manual' | 'timed';
 export interface Settings {
   focus_minutes: number;
   break_minutes: number;
-  locale: 'zh-CN' | 'en-US';
+  locale: AppLocale;
   notifications: boolean;
   focus_mode: FocusMode;
   appearance: Appearance;
