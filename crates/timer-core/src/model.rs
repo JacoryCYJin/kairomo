@@ -35,6 +35,8 @@ pub struct Settings {
     pub locale: String,
     pub notifications: bool,
     #[serde(default)]
+    pub focus_mode: FocusMode,
+    #[serde(default)]
     pub appearance: Appearance,
     #[serde(default = "default_visual_series")]
     pub visual_series: String,
@@ -46,10 +48,19 @@ impl Default for Settings {
             break_minutes: 10,
             locale: "zh-CN".into(),
             notifications: true,
+            focus_mode: FocusMode::Manual,
             appearance: Appearance::System,
             visual_series: default_visual_series(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FocusMode {
+    #[default]
+    Manual,
+    Timed,
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), TimerError> {
@@ -80,6 +91,9 @@ pub struct Session {
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
     pub target_ms: u64,
+    /// Capture the mode for this round; later settings changes affect the next round.
+    #[serde(default)]
+    pub focus_mode: FocusMode,
     pub duration_ms: u64,
     pub intervals: Vec<Interval>,
     pub corrected: bool,

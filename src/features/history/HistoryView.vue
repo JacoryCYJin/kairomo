@@ -5,7 +5,6 @@ import { copy, duration, locale, localTime } from '../../shared/i18n';
 import { isCompletedFocus } from '../../shared/completions';
 import SeriesReward from '../../shared/series/SeriesReward.vue';
 import type { SeriesId } from '../../shared/series/types';
-import CoffeeCupIcon from '../../shared/ui/CoffeeCupIcon.vue';
 import HistoryCalendar from './HistoryCalendar.vue';
 import HistoryRangeFilter from './HistoryRangeFilter.vue';
 import SeriesCollection from '../../shared/series/SeriesCollection.vue';
@@ -40,6 +39,9 @@ const editTitle = ref(''),
   editMinutes = ref(1),
   invalid = ref(false);
 const modal = ref<HTMLDialogElement | null>(null);
+const deleteHeading = ref<HTMLHeadingElement | null>(null);
+const loadTrigger = ref<HTMLDivElement | null>(null);
+let loadObserver: IntersectionObserver | undefined;
 const now = ref(new Date()),
   range = ref<HistoryFilter>('day');
 const anchor = ref(dateInput(now.value));
@@ -56,7 +58,10 @@ onMounted(() => {
     now.value = next;
   }, 30000);
 });
-onUnmounted(() => clearInterval(clockTick));
+onUnmounted(() => {
+  clearInterval(clockTick);
+  loadObserver?.disconnect();
+});
 const anchorDate = computed(() => parseDateInput(anchor.value) ?? now.value);
 const period = computed(() =>
   range.value === 'custom'
@@ -68,7 +73,9 @@ const sessions = computed(() =>
     ? [props.current, ...props.records.filter((s) => s.id !== props.current?.id)]
     : props.records,
 );
-const filtered = computed(() => historyRecords(sessions.value, period.value, props.checkpoint));
+const filtered = computed(() =>
+  historyRecords(props.records, period.value, props.checkpoint).filter(isCompletedFocus),
+);
 const total = computed(() =>
   totalInPeriod(sessions.value, 'focus', period.value, props.checkpoint),
 );
@@ -89,6 +96,22 @@ const groups = computed(() => {
 watch([range, anchor, from, to], () => {
   visibleCount.value = 50;
 });
+watch(
+  [loadTrigger, visibleCount],
+  ([trigger]) => {
+    loadObserver?.disconnect();
+    if (!trigger) return;
+    loadObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting))
+          visibleCount.value = Math.min(filtered.value.length, visibleCount.value + 50);
+      },
+      { root: trigger.closest('.details-content'), rootMargin: '300px 0px' },
+    );
+    loadObserver.observe(trigger);
+  },
+  { flush: 'post' },
+);
 function selectDate(value: string) {
   const date = parseDateInput(value);
   if (!date || value > dateInput(new Date())) return;
@@ -109,20 +132,22 @@ const periodLabel = computed(() => {
   if (range.value === 'all') return copy.value.allHistory;
   const first = new Date(period.value.start);
   if (range.value === 'day') return fullDate(first);
-  return `${fullDate(first)} – ${fullDate(new Date(period.value.end - 1))}`;
+  const compact = (date: Date) =>
+    date.toLocaleDateString(locale.value, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  return `${compact(first)} – ${compact(new Date(period.value.end - 1))}`;
 });
 function recordTime(session: Session) {
   const start = new Date(session.started_at_ms);
   const end = session.ended_at_ms === null ? null : new Date(session.ended_at_ms);
-  return (
-    fullDate(start) +
-    ' ' +
-    localTime(start.getTime()) +
-    ' — ' +
-    (end
-      ? (dateInput(start) === dateInput(end) ? '' : fullDate(end) + ' ') + localTime(end.getTime())
-      : copy.value.ongoing)
-  );
+  const days = end
+    ? Math.round(
+        (Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) -
+          Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) /
+          86400000,
+      )
+    : 0;
+  const offset = days === 1 ? copy.value.nextDay : days > 1 ? `+${days}${copy.value.days}` : '';
+  return `${localTime(start.getTime())} — ${end ? `${offset ? offset + ' ' : ''}${localTime(end.getTime())}` : copy.value.ongoing}`;
 }
 async function edit(s: Session) {
   editing.value = s;
@@ -138,6 +163,7 @@ async function askDelete(s: Session) {
   editing.value = null;
   await nextTick();
   modal.value?.showModal();
+  deleteHeading.value?.focus({ preventScroll: true });
 }
 function close() {
   modal.value?.close();
@@ -165,19 +191,18 @@ function submit() {
         <Download :size="14" />{{ copy.exportAll }}
       </button>
     </div>
-    <HistoryRangeFilter
-      class="mt-4"
-      :range="range"
-      :from="from"
-      :to="to"
-      :today="dateInput(now)"
-      @range="range = $event"
-      @custom="applyCustom"
-    />
     <div
-      class="mb-7 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 border-b border-line pb-5"
+      class="mb-7 mt-4 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 border-b border-line pb-5"
     >
       <div class="flex min-w-0 flex-col" data-history-calendar-column>
+        <HistoryRangeFilter
+          :range="range"
+          :from="from"
+          :to="to"
+          :today="dateInput(now)"
+          @range="range = $event"
+          @custom="applyCustom"
+        />
         <HistoryCalendar
           :month="month"
           :selected="anchor"
@@ -190,11 +215,22 @@ function submit() {
           @select="selectDate"
           @today="selectDate(dateInput(new Date()))"
         />
-        <p class="mt-3 whitespace-nowrap text-xs leading-relaxed text-faint" data-history-period>
+      </div>
+      <div class="flex min-w-0 flex-col items-center" data-history-collection-column>
+        <SeriesCollection
+          class="!h-auto min-h-0 w-full flex-1"
+          :records="beans"
+          :series-id="seriesId"
+          :total="total"
+          fit-height
+        />
+        <p
+          class="mt-3 shrink-0 whitespace-nowrap text-xs leading-relaxed text-faint"
+          data-history-period
+        >
           {{ periodLabel }}
         </p>
       </div>
-      <SeriesCollection :records="beans" :series-id="seriesId" :total="total" fit-height />
     </div>
     <div class="mb-2 flex items-center justify-between">
       <span class="eyebrow">{{ copy.historyEntries }}</span
@@ -215,24 +251,14 @@ function submit() {
         :key="s.id"
         class="group -mx-2 flex items-center gap-2 rounded-lg px-2 py-3 hover:bg-surface-muted wide:gap-2.5"
       >
-        <SeriesReward
-          :series-id="seriesId"
-          v-if="isCompletedFocus(s)"
-          class="size-5"
-          :duration="s.duration_ms"
-        /><CoffeeCupIcon v-else-if="s.kind === 'break'" class="size-4 text-muted" /><Clock3
-          v-else
-          class="size-4 text-muted"
-        />
+        <SeriesReward :series-id="seriesId" class="size-5" :duration="s.duration_ms" />
         <div class="min-w-0 flex-1">
           <strong class="block truncate text-sm font-normal">{{ s.title || copy.untitled }}</strong
           ><span class="mt-1.5 block text-xs text-faint"
             >{{ recordTime(s) }}<span v-if="s.corrected"> · {{ copy.corrected }}</span></span
           >
         </div>
-        <span class="hidden shrink-0 text-xs text-muted wide:inline">{{
-          s.kind === 'focus' ? copy.focus : copy.resting
-        }}</span
+        <span class="hidden shrink-0 text-xs text-muted wide:inline">{{ copy.focus }}</span
         ><strong
           class="mr-1 w-14 shrink-0 text-right text-xs font-medium tabular-nums wide:w-16"
           :title="copy.sessionTotal + ' · ' + duration(s.duration_ms)"
@@ -258,12 +284,13 @@ function submit() {
         </button>
       </div>
     </section>
-    <div v-if="filtered.length > visibleCount" class="mt-5 flex justify-center">
-      <button class="button secondary compact" @click="visibleCount += 50">
-        {{ copy.loadMore }}
-      </button>
-    </div>
-    <dialog ref="modal" class="modal" @cancel="close">
+    <div v-if="filtered.length > visibleCount" ref="loadTrigger" class="h-px" aria-hidden="true" />
+    <dialog
+      ref="modal"
+      class="modal"
+      :aria-labelledby="deleting ? 'delete-record-title' : undefined"
+      @cancel="close"
+    >
       <form v-if="editing" @submit.prevent="submit">
         <div class="modal-heading">
           <h2>{{ copy.edit }}</h2>
@@ -289,7 +316,9 @@ function submit() {
         </div>
       </form>
       <div v-if="deleting">
-        <h2>{{ copy.confirmDelete }}</h2>
+        <h2 ref="deleteHeading" id="delete-record-title" tabindex="-1" class="outline-none">
+          {{ copy.confirmDelete }}
+        </h2>
         <p>{{ copy.deleteHint }}</p>
         <div class="modal-actions">
           <button class="button secondary" @click="close">{{ copy.cancel }}</button

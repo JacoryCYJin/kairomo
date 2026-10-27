@@ -5,6 +5,30 @@ export const coffeeSeries = {
   name: { 'zh-CN': '咖啡豆', 'en-US': 'Coffee beans' },
   summary: { limit: 6, replace: 'shortest' },
   collection: { insideCapacity: 80, displayLimit: 120 },
+  rest: {
+    kind: 'liquid',
+    light: {
+      ink: '#3D2518',
+      muted: '#43291C',
+      selected: '#EED5BA',
+      hover: '#E3BF98',
+      line: '#D1A57B',
+      waves: ['#D8B18A', '#C89B72', '#BF8D63'],
+    },
+    dark: {
+      ink: '#E7C7A6',
+      muted: '#D8B897',
+      selected: '#51392C',
+      hover: '#634634',
+      line: '#79563F',
+      waves: ['#302119', '#3B2A21', '#493329'],
+    },
+    waves: [
+      { amplitude: 6, period: 9 },
+      { amplitude: 9, period: 7 },
+      { amplitude: 12, period: 5 },
+    ],
+  },
   // Product thresholds adapted from the City → Vienna development segment, anchored at 60 min.
   tiers: [
     { from: 0, name: { 'zh-CN': '浅烘', 'en-US': 'Light' }, light: '#D8B89B', dark: '#E1C6AA' },

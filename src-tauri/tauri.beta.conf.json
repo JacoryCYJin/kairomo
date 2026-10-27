@@ -1,0 +1,46 @@
+{
+  "productName": "Kairomo Beta",
+  "identifier": "com.jacorycyjin.kairomo",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kairomo Beta",
+        "width": 360,
+        "height": 280,
+        "resizable": false,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true
+      },
+      {
+        "label": "details",
+        "title": "Kairomo Beta",
+        "url": "index.html?view=settings",
+        "width": 620,
+        "height": 640,
+        "minWidth": 520,
+        "minHeight": 520,
+        "visible": false,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NzRBRDYxN0RCRDk2OUUKUldTZWxyMTlZYTEweEJjWlVQa0JrWExtaTI0cG8rMm80aTYyR3FoajV3N2FYdlNvNnFNWGllaS8K",
+      "requireSignedVersion": true
+    }
+  }
+}

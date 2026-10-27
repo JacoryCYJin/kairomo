@@ -1,6 +1,7 @@
 mod commands;
 mod platform;
 mod runtime;
+mod updates;
 use runtime::{AppState, Runtime};
 use std::{sync::Mutex, time::Duration};
 use tauri::{Emitter, Manager};
@@ -14,7 +15,13 @@ pub fn run() {
             platform::show(app)
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(include_str!("../updater.pub").trim())
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
+        .manage(updates::Updates::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -77,7 +84,10 @@ pub fn run() {
             commands::sync_window_appearance,
             commands::delete_session,
             commands::correct_session,
-            commands::export_csv
+            commands::export_csv,
+            updates::release_info,
+            updates::check_update,
+            updates::install_update
         ])
         .build(tauri::generate_context!())
         .expect("Unable to start Kairomo; check app-data access and SQLite integrity");

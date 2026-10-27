@@ -4,6 +4,15 @@ use crate::*;
 pub struct Engine {
     pub state: Snapshot,
 }
+pub struct PhaseAdvance {
+    pub reached: Option<TargetReached>,
+    pub completed: Option<Session>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetReached {
+    pub kind: Kind,
+    pub completed: bool,
+}
 impl Engine {
     pub fn restore(mut state: Snapshot) -> Self {
         if state.phase == Phase::Running {
@@ -26,10 +35,10 @@ impl Engine {
         if title.chars().count() > 160 {
             return Err(TimerError::TitleTooLong);
         }
-        self.begin(id, Kind::Focus, title.trim().into(), now);
+        self.begin(id, Kind::Focus, title.trim().into(), now, true);
         Ok(())
     }
-    fn begin(&mut self, id: String, kind: Kind, title: String, now: i64) {
+    fn begin(&mut self, id: String, kind: Kind, title: String, now: i64, running: bool) {
         let minutes = match kind {
             Kind::Focus => self.state.settings.focus_minutes,
             Kind::Break => self.state.settings.break_minutes,
@@ -41,17 +50,26 @@ impl Engine {
             started_at_ms: now,
             ended_at_ms: None,
             target_ms: minutes as u64 * 60_000,
+            focus_mode: self.state.settings.focus_mode.clone(),
             duration_ms: 0,
-            intervals: vec![Interval {
-                started_at_ms: now,
-                ended_at_ms: None,
-                duration_ms: 0,
-            }],
+            intervals: if running {
+                vec![Interval {
+                    started_at_ms: now,
+                    ended_at_ms: None,
+                    duration_ms: 0,
+                }]
+            } else {
+                Vec::new()
+            },
             corrected: false,
         });
-        self.state.phase = Phase::Running;
+        self.state.phase = if running {
+            Phase::Running
+        } else {
+            Phase::Paused
+        };
         self.state.needs_recovery = false;
-        self.state.pause_reason = None;
+        self.state.pause_reason = if running { None } else { Some("ready".into()) };
         self.state.target_notified = false;
         self.state.checkpoint_at_ms = now;
     }
@@ -73,6 +91,43 @@ impl Engine {
         }
         false
     }
+    /// Resolve the deadline using effective time, then prepare (never start) the next phase.
+    pub fn advance_phase(&mut self, delta_ms: u64, now: i64, next_id: String) -> PhaseAdvance {
+        let current = self.state.current.as_ref();
+        let automatic = self.state.phase == Phase::Running
+            && current.is_some_and(|s| s.kind == Kind::Break || s.focus_mode == FocusMode::Timed);
+        let kind = current.map(|s| s.kind.clone());
+        let remaining = current.map_or(0, |s| s.target_ms.saturating_sub(s.duration_ms));
+        let ends = automatic && delta_ms >= remaining;
+        let counted = if ends {
+            delta_ms.min(remaining)
+        } else {
+            delta_ms
+        };
+        let cutoff = now.saturating_sub(delta_ms.saturating_sub(counted) as i64);
+        let reached = self.advance(counted, if ends { cutoff } else { now });
+        let completed = if ends {
+            // Includes legacy overdue breaks resumed after upgrading.
+            Some(
+                self.switch(next_id, cutoff)
+                    .expect("running phase has a session"),
+            )
+        } else {
+            None
+        };
+        self.state.checkpoint_at_ms = now;
+        PhaseAdvance {
+            reached: if reached || ends {
+                kind.map(|kind| TargetReached {
+                    kind,
+                    completed: ends,
+                })
+            } else {
+                None
+            },
+            completed,
+        }
+    }
     pub fn pause(&mut self, now: i64, reason: &str) -> Result<(), TimerError> {
         if self.state.phase != Phase::Running {
             return Err(TimerError::InvalidTransition);
@@ -92,6 +147,10 @@ impl Engine {
             return Err(TimerError::InvalidTransition);
         }
         if let Some(s) = &mut self.state.current {
+            // A prepared phase has no active interval or actual start time yet.
+            if s.intervals.is_empty() {
+                s.started_at_ms = now;
+            }
             s.intervals.push(Interval {
                 started_at_ms: now,
                 ended_at_ms: None,
@@ -105,6 +164,14 @@ impl Engine {
         Ok(())
     }
     pub fn finish(&mut self, now: i64) -> Result<Session, TimerError> {
+        if !self
+            .state
+            .current
+            .as_ref()
+            .is_some_and(|s| !s.intervals.is_empty())
+        {
+            return Err(TimerError::InvalidTransition);
+        }
         let mut session = self
             .state
             .current
@@ -144,12 +211,22 @@ impl Engine {
         };
         let title = current.title.clone();
         let done = self.finish(now)?;
-        self.begin(id, next, title, now);
+        self.begin(id, next, title, now, false);
         Ok(done)
     }
     pub fn configure(&mut self, settings: Settings) -> Result<(), TimerError> {
         settings.validate()?;
         self.state.settings = settings;
+        if let Some(session) = &mut self.state.current {
+            if session.intervals.is_empty() {
+                let minutes = match session.kind {
+                    Kind::Focus => self.state.settings.focus_minutes,
+                    Kind::Break => self.state.settings.break_minutes,
+                };
+                session.target_ms = minutes as u64 * 60_000;
+                session.focus_mode = self.state.settings.focus_mode.clone();
+            }
+        }
         Ok(())
     }
 }
@@ -183,6 +260,171 @@ mod tests {
         let s = e.finish(226_000).unwrap();
         assert_eq!(s.duration_ms, 45_000);
         assert_eq!(s.intervals.len(), 2);
+    }
+    #[test]
+    fn timed_focus_stops_at_its_exact_effective_target_then_waits_for_break_start() {
+        let mut e = Engine::default();
+        e.configure(Settings {
+            focus_minutes: 1,
+            focus_mode: FocusMode::Timed,
+            ..Settings::default()
+        })
+        .unwrap();
+        e.start("focus".into(), "Read".into(), 1000).unwrap();
+        e.advance_phase(30_000, 31_000, "unused".into());
+        e.pause(31_000, "manual").unwrap();
+        e.resume(91_000).unwrap();
+        let event = e.advance_phase(30_750, 121_750, "rest".into());
+        assert_eq!(
+            event.reached,
+            Some(TargetReached {
+                kind: Kind::Focus,
+                completed: true
+            })
+        );
+        let done = event.completed.unwrap();
+        assert_eq!(done.duration_ms, 60_000);
+        assert_eq!(done.ended_at_ms, Some(121_000));
+        assert_eq!(done.intervals.last().unwrap().ended_at_ms, Some(121_000));
+        assert_eq!(
+            done.intervals.iter().map(|i| i.duration_ms).sum::<u64>(),
+            60_000
+        );
+        assert_eq!(e.state.phase, Phase::Paused);
+        assert_eq!(e.state.pause_reason.as_deref(), Some("ready"));
+        assert_eq!(e.state.current.as_ref().unwrap().kind, Kind::Break);
+        assert_eq!(e.state.checkpoint_at_ms, 121_750);
+        assert!(e
+            .advance_phase(90_000, 211_750, "unused".into())
+            .completed
+            .is_none());
+        assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
+    }
+    #[test]
+    fn rest_always_ends_at_target_for_both_modes_and_waits_for_focus_start() {
+        for mode in [FocusMode::Manual, FocusMode::Timed] {
+            let mut e = active();
+            e.configure(Settings {
+                focus_mode: mode.clone(),
+                break_minutes: 1,
+                ..Settings::default()
+            })
+            .unwrap();
+            e.switch("rest".into(), 2000).unwrap();
+            e.resume(10_000).unwrap();
+            let event = e.advance_phase(60_999, 70_999, "next".into());
+            assert_eq!(
+                event.reached,
+                Some(TargetReached {
+                    kind: Kind::Break,
+                    completed: true
+                })
+            );
+            assert_eq!(event.completed.unwrap().duration_ms, 60_000);
+            assert_eq!(e.state.phase, Phase::Paused);
+            let next = e.state.current.as_ref().unwrap();
+            assert_eq!(next.kind, Kind::Focus);
+            assert_eq!(next.focus_mode, mode);
+            assert!(next.intervals.is_empty());
+            e.advance_phase(20_000, 90_999, "unused".into());
+            assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
+        }
+    }
+    #[test]
+    fn mode_changes_are_latched_to_started_focus_and_legacy_data_defaults_to_manual() {
+        let mut e = active();
+        e.configure(Settings {
+            focus_minutes: 1,
+            focus_mode: FocusMode::Timed,
+            ..Settings::default()
+        })
+        .unwrap();
+        assert_eq!(
+            e.state.current.as_ref().unwrap().focus_mode,
+            FocusMode::Manual
+        );
+        assert!(e
+            .advance_phase(51 * 60_000, 3_061_000, "unused".into())
+            .completed
+            .is_none());
+        e.switch("rest".into(), 3_061_000).unwrap();
+        e.resume(3_061_500).unwrap();
+        e.switch("next".into(), 3_062_000).unwrap();
+        assert_eq!(
+            e.state.current.as_ref().unwrap().focus_mode,
+            FocusMode::Timed
+        );
+        e.resume(3_063_000).unwrap();
+        e.configure(Settings::default()).unwrap();
+        assert_eq!(
+            e.state.current.as_ref().unwrap().focus_mode,
+            FocusMode::Timed
+        );
+        assert!(e
+            .advance_phase(60_000, 3_123_000, "rest2".into())
+            .completed
+            .is_some());
+        let mut legacy = serde_json::to_value(active().state).unwrap();
+        legacy["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("focus_mode");
+        legacy["current"]
+            .as_object_mut()
+            .unwrap()
+            .remove("focus_mode");
+        let restored: Snapshot = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.settings.focus_mode, FocusMode::Manual);
+        assert_eq!(restored.current.unwrap().focus_mode, FocusMode::Manual);
+    }
+    #[test]
+    fn both_switches_wait_for_manual_start_and_exclude_the_waiting_gap() {
+        let mut e = active();
+        e.advance(25_000, 26_000);
+        let focus = e.switch("rest".into(), 26_000).unwrap();
+        assert_eq!(focus.duration_ms, 25_000);
+        for (kind, start_at) in [(Kind::Break, 90_000), (Kind::Focus, 180_000)] {
+            assert_eq!(e.state.phase, Phase::Paused);
+            assert_eq!(e.state.pause_reason.as_deref(), Some("ready"));
+            assert_eq!(e.state.current.as_ref().unwrap().kind, kind);
+            assert!(e.state.current.as_ref().unwrap().intervals.is_empty());
+            assert!(!e.advance(60_000, start_at));
+            assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
+            // Reopening preserves the prepared phase rather than starting it.
+            e = Engine::restore(e.state.clone());
+            assert!(!e.state.needs_recovery);
+            e.resume(start_at).unwrap();
+            assert_eq!(e.state.current.as_ref().unwrap().started_at_ms, start_at);
+            e.advance(5_000, start_at + 5_000);
+            e.pause(start_at + 5_000, "manual").unwrap();
+            e.advance(10_000, start_at + 15_000);
+            e.resume(start_at + 15_000).unwrap();
+            e.advance(3_000, start_at + 18_000);
+            let done = e
+                .switch(format!("next-{start_at}"), start_at + 18_000)
+                .unwrap();
+            assert_eq!(done.duration_ms, 8_000);
+            assert_eq!(done.intervals.len(), 2);
+            assert_eq!(done.title, "Read");
+        }
+    }
+    #[test]
+    fn preparing_a_phase_uses_new_settings_but_does_not_change_started_sessions() {
+        let mut e = active();
+        e.switch("rest".into(), 2000).unwrap();
+        e.configure(Settings {
+            break_minutes: 7,
+            ..Settings::default()
+        })
+        .unwrap();
+        assert_eq!(e.state.current.as_ref().unwrap().target_ms, 7 * 60_000);
+        e.resume(3000).unwrap();
+        e.configure(Settings {
+            break_minutes: 3,
+            ..Settings::default()
+        })
+        .unwrap();
+        assert_eq!(e.state.current.as_ref().unwrap().target_ms, 7 * 60_000);
     }
     #[test]
     fn recovery_never_counts_unconfirmed_time() {
@@ -248,8 +490,29 @@ mod tests {
             e.start("new".into(), "Read".into(), 34_000).unwrap();
             assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
             e.switch("rest".into(), 35_000).unwrap();
+            e.resume(35_500).unwrap();
             e.cancel("rest", 36_000).unwrap();
             assert!(e.state.current.is_none());
+        }
+    }
+
+    #[test]
+    fn prepared_focus_and_rest_reject_completion_cancel_and_skip_without_mutation() {
+        for kind in [Kind::Focus, Kind::Break] {
+            let mut e = Engine::default();
+            e.begin("ready".into(), kind, "Read".into(), 1000, false);
+            let before = serde_json::to_value(&e.state).unwrap();
+            assert!(e.finish(2000).is_err());
+            assert!(e.cancel("ready", 2000).is_err());
+            assert!(e.switch("other".into(), 2000).is_err());
+            assert_eq!(serde_json::to_value(&e.state).unwrap(), before);
+            // Even a zero-duration start followed by pause enables the actions.
+            e.resume(3000).unwrap();
+            e.pause(3000, "manual").unwrap();
+            assert_eq!(e.state.current.as_ref().unwrap().duration_ms, 0);
+            assert!(e.clone().finish(3000).is_ok());
+            assert!(e.clone().cancel("ready", 3000).is_ok());
+            assert!(e.switch("other".into(), 3000).is_ok());
         }
     }
 }

@@ -14,7 +14,8 @@ Usage: bash scripts/dev.sh <action>
   status      Show development process state
   logs        Last 120 log lines
   list        List this project's development target
-  build       Build a macOS debug .app
+  build       Build the isolated Kairomo Dev debug .app
+  beta        Build local Beta app, DMG and signed updater artifacts (no upload)
   help        Show help
 HELP
 }
@@ -31,7 +32,6 @@ stop_tree() { local parent="$1" child; while read -r child; do [[ -n "$child" ]]
 start() {
   if running; then echo 'Kairomo development app is already running.'; return; fi
   if lsof -nP -iTCP:1420 -sTCP:LISTEN >/dev/null 2>&1; then echo 'Port 1420 is in use. Check the existing process before starting Kairomo.' >&2; return 1; fi
-  if pgrep -x kairomo-desktop >/dev/null 2>&1; then echo 'Kairomo is already open. Quit the existing instance before development.' >&2; return 1; fi
   command -v cargo >/dev/null || { echo 'Rust is missing; see docs/development.md.' >&2; return 1; }
   mkdir -p "$STATE"
   cd "$ROOT"
@@ -42,7 +42,7 @@ start() {
 stop() { if running; then stop_tree "$(cat "$PIDFILE")"; fi; rm -f "$PIDFILE"; echo 'Kairomo development process stopped.'; }
 if [[ $# -gt 2 ]]; then usage >&2; exit 2; fi
 if [[ $# -eq 2 ]]; then
-  case "$1" in start|stop|restart|status|logs|list|build|help) ;; *) usage >&2; exit 2;; esac
+  case "$1" in start|stop|restart|status|logs|list|build|beta|help) ;; *) usage >&2; exit 2;; esac
   case "$2" in --help|-h) usage; exit 0;; *) usage >&2; exit 2;; esac
 fi
 case "${1:-help}" in
@@ -54,5 +54,6 @@ case "${1:-help}" in
   stop) stop;;
   restart) stop; start;;
   build) cd "$ROOT"; npm run tauri -- build --debug --bundles app;;
+  beta) bash "$ROOT/scripts/package-beta.sh";;
   *) usage >&2; exit 2;;
 esac

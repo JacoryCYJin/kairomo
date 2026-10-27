@@ -1,35 +1,32 @@
 import { onMounted, onUnmounted, shallowRef, watch } from 'vue';
-import { createBeanLayoutJob } from './layouts';
+import { cachedBeanLayout, cacheBeanLayout } from './layouts';
 import type { BeanLayout } from './layouts';
 export function useCoffeeLayout(ids: () => string[]) {
   const layout = shallowRef<BeanLayout | null>(null);
-  let job: ReturnType<typeof createBeanLayoutJob> | undefined;
-  let frame = 0,
-    generation = 0;
+  let worker: Worker | undefined;
+  let generation = 0;
   function stop() {
-    cancelAnimationFrame(frame);
-    frame = 0;
+    worker?.terminate();
+    worker = undefined;
   }
   function run() {
     stop();
-    if (!job || document.hidden) return;
+    if (layout.value || document.hidden) return;
     const version = generation;
-    function solve() {
-      if (!job || version !== generation) return;
-      const result = job.result ?? job.step();
-      if (result) {
-        layout.value = result;
-        frame = 0;
-      } else frame = requestAnimationFrame(solve);
-    }
-    solve();
+    const selected = ids();
+    worker = new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent<BeanLayout>) => {
+      if (version !== generation) return;
+      cacheBeanLayout(selected, event.data);
+      layout.value = event.data;
+      stop();
+    };
+    worker.postMessage(selected);
   }
   function rebuild() {
     generation++;
     stop();
-    job?.dispose();
-    layout.value = null;
-    job = createBeanLayoutJob(ids());
+    layout.value = cachedBeanLayout(ids()) ?? null;
     run();
   }
   function visibility() {
@@ -44,7 +41,6 @@ export function useCoffeeLayout(ids: () => string[]) {
   onUnmounted(() => {
     generation++;
     stop();
-    job?.dispose();
     document.removeEventListener('visibilitychange', visibility);
   });
   return { layout };

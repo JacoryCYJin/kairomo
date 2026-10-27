@@ -1,7 +1,7 @@
 //! SQLite adapter. All durable state belongs in the OS app-data directory.
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
-use timer_core::{Repository, Session, Snapshot};
+use timer_core::{Kind, Repository, Session, Snapshot};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -19,6 +19,10 @@ pub struct SqliteRepository {
     connection: Connection,
 }
 impl SqliteRepository {
+    pub fn backup_to(&self, destination: &Path) -> Result<(), StorageError> {
+        self.connection.backup("main", destination, None)?;
+        Ok(())
+    }
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         Self::from_connection(Connection::open(path)?)
     }
@@ -54,7 +58,10 @@ impl Repository for SqliteRepository {
     }
     fn persist(&mut self, state: &Snapshot, completed: &[Session]) -> Result<(), Self::Error> {
         let tx = self.connection.transaction()?;
-        for s in completed {
+        for s in completed
+            .iter()
+            .filter(|s| s.kind == Kind::Focus && s.ended_at_ms.is_some() && !s.intervals.is_empty())
+        {
             tx.execute(
                 "INSERT INTO sessions(id, started_at_ms, data) VALUES(?1, ?2, ?3)",
                 params![s.id, s.started_at_ms, serde_json::to_string(s)?],
@@ -69,7 +76,14 @@ impl Repository for SqliteRepository {
             .connection
             .prepare("SELECT data FROM sessions ORDER BY started_at_ms DESC, id DESC")?;
         let rows = query.query_map([], |r| r.get::<_, String>(0))?;
-        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+        let records: Result<Vec<Session>, Self::Error> =
+            rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect();
+        records.map(|records| {
+            records
+                .into_iter()
+                .filter(|s| s.kind == Kind::Focus && s.ended_at_ms.is_some())
+                .collect()
+        })
     }
     fn delete_session(&mut self, id: &str) -> Result<(), Self::Error> {
         if self
@@ -99,6 +113,80 @@ mod tests {
     use timer_core::Engine;
     fn db() -> SqliteRepository {
         SqliteRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+    #[test]
+    fn rest_and_unfinished_sessions_never_enter_history_but_rest_checkpoint_recovers() {
+        let mut repo = db();
+        let mut engine = Engine::default();
+        engine.start("focus".into(), "Read".into(), 1000).unwrap();
+        engine.advance(30_000, 31_000);
+        let focus = engine.switch("rest".into(), 31_000).unwrap();
+        engine.resume(31_000).unwrap();
+        engine.advance(10_000, 41_000);
+        engine.pause(41_000, "manual").unwrap();
+        let checkpoint = engine.state.clone();
+        let ongoing_rest = checkpoint.current.as_ref().unwrap().clone();
+        let rest = engine.finish(41_000).unwrap();
+        let mut unfinished_focus = focus.clone();
+        unfinished_focus.id = "unfinished".into();
+        unfinished_focus.ended_at_ms = None;
+        repo.persist(&checkpoint, &[focus, rest, unfinished_focus, ongoing_rest])
+            .unwrap();
+        let raw_count: u32 = repo
+            .connection
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(raw_count, 1);
+        let loaded = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(loaded.phase, timer_core::Phase::Paused);
+        let current = loaded.current.unwrap();
+        assert_eq!(current.kind, Kind::Break);
+        assert_eq!(current.duration_ms, 10_000);
+        assert_eq!(repo.sessions().unwrap()[0].duration_ms, 30_000);
+    }
+    #[test]
+    fn legacy_rest_rows_are_excluded_without_deleting_existing_data() {
+        let mut repo = db();
+        let mut engine = Engine::default();
+        engine.start("focus".into(), "Read".into(), 1000).unwrap();
+        let focus = engine.switch("rest".into(), 2000).unwrap();
+        engine.resume(2500).unwrap();
+        let rest = engine.finish(3000).unwrap();
+        repo.connection
+            .execute(
+                "INSERT INTO sessions(id,started_at_ms,data) VALUES(?1,?2,?3)",
+                params![
+                    rest.id,
+                    rest.started_at_ms,
+                    serde_json::to_string(&rest).unwrap()
+                ],
+            )
+            .unwrap();
+        repo.persist(&engine.state, &[focus]).unwrap();
+        assert_eq!(repo.sessions().unwrap().len(), 1);
+        let raw_count: u32 = repo
+            .connection
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(raw_count, 2);
+    }
+    #[test]
+    fn never_started_focus_is_checkpoint_only_even_if_submitted_as_completed() {
+        let mut repo = db();
+        let mut engine = Engine::default();
+        engine.start("first".into(), "Read".into(), 1000).unwrap();
+        let first = engine.switch("rest".into(), 2000).unwrap();
+        engine.resume(2500).unwrap();
+        engine.switch("prepared".into(), 3000).unwrap();
+        let waiting = engine.state.clone();
+        // Simulate malformed legacy input without bypassing the engine's guard.
+        let mut never_started = waiting.current.as_ref().unwrap().clone();
+        never_started.ended_at_ms = Some(100_000);
+        repo.persist(&waiting, &[first, never_started]).unwrap();
+        assert_eq!(repo.sessions().unwrap().len(), 1);
+        let checkpoint = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(checkpoint.pause_reason.as_deref(), Some("ready"));
+        assert!(checkpoint.current.unwrap().intervals.is_empty());
     }
     #[test]
     fn records_and_checkpoint_are_atomic_and_roundtrip() {
@@ -179,6 +267,7 @@ mod tests {
                 started_at_ms: 0,
                 ended_at_ms: Some(1),
                 target_ms: 1,
+                focus_mode: timer_core::FocusMode::Manual,
                 duration_ms: 1,
                 intervals: vec![],
                 corrected: false

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
-import { Bell, Languages, Check, Monitor, Layers3 } from 'lucide-vue-next';
+import { Check, ChevronDown } from 'lucide-vue-next';
 import { availableSeries } from '../../shared/series/catalog';
 import { copy, locale } from '../../shared/i18n';
 import type { Preferences, Settings } from '../../shared/ipc/types';
+import UpdateSettings from './UpdateSettings.vue';
 const props = defineProps<{ settings: Settings; busy: boolean }>();
 const emit = defineEmits<{ save: [Settings]; preference: [Partial<Preferences>] }>();
 const form = reactive({
   focus_minutes: props.settings.focus_minutes,
   break_minutes: props.settings.break_minutes,
   notifications: props.settings.notifications,
+  focus_mode: props.settings.focus_mode,
 });
 watch(
   () => props.settings,
@@ -19,6 +21,7 @@ watch(
       if (form[key] === previous[key]) form[key] = next[key];
     }
     if (form.notifications === previous.notifications) form.notifications = next.notifications;
+    if (form.focus_mode === previous.focus_mode) form.focus_mode = next.focus_mode;
   },
 );
 function choosePreference(key: keyof Preferences, event: Event) {
@@ -33,123 +36,179 @@ function choosePreference(key: keyof Preferences, event: Event) {
 }
 </script>
 <template>
-  <section class="pb-5">
-    <div class="pt-5">
-      <h1 class="mb-2 text-xl font-semibold tracking-tight">{{ copy.settingsTitle }}</h1>
-    </div>
+  <section class="mx-auto max-w-[580px] pb-2 pt-4">
+    <h1 class="text-xl font-semibold tracking-tight">{{ copy.settingsTitle }}</h1>
     <form @submit.prevent="emit('save', { ...settings, ...form })">
-      <section class="mt-7 pb-6">
-        <h2 class="mb-4 text-sm font-medium">{{ copy.timerSettings }}</h2>
-        <div class="grid grid-cols-2 gap-4">
-          <label class="text-xs text-muted"
-            >{{ copy.focusDuration }}
-            <div
-              class="mt-2 flex h-11 items-center gap-2.5 rounded-xl border border-line bg-surface-muted px-3"
+      <section class="mt-4" :aria-label="copy.timerSettings">
+        <h2 class="mb-2.5 text-sm font-medium">{{ copy.timerSettings }}</h2>
+        <div class="grid auto-rows-fr rounded-xl border border-line bg-surface">
+          <label class="flex min-h-[52px] items-center justify-between gap-4 px-3.5 py-1.5">
+            <span class="text-xs"
+              >{{ copy.focusDuration
+              }}<span id="focus-duration-hint" class="mt-0.5 block leading-normal text-faint">{{
+                copy.nextFocusDuration
+              }}</span></span
             >
+            <span class="flex shrink-0 items-center gap-2 text-xs text-muted">
               <input
-                class="min-w-0 w-full border-0 bg-transparent text-lg tabular-nums outline-offset-0"
                 v-model.number="form.focus_minutes"
+                :aria-label="copy.focusDuration"
+                aria-describedby="focus-duration-hint"
+                class="h-7 w-16 rounded-md border border-line bg-paper px-2 text-xs tabular-nums"
                 type="number"
                 min="1"
                 max="240"
                 required
-              /><span class="whitespace-nowrap text-xs">{{ copy.minutes }}</span>
-            </div></label
-          ><label class="text-xs text-muted"
-            >{{ copy.breakDuration }}
-            <div
-              class="mt-2 flex h-11 items-center gap-2.5 rounded-xl border border-line bg-surface-muted px-3"
+              />
+              {{ copy.minutes }}
+            </span>
+          </label>
+          <label
+            class="mx-3.5 flex min-h-[52px] items-center justify-between gap-4 border-t border-line py-1.5"
+          >
+            <span class="text-xs"
+              >{{ copy.breakDuration
+              }}<span id="break-duration-hint" class="mt-0.5 block leading-normal text-faint">{{
+                copy.breakEndHint
+              }}</span></span
             >
+            <span class="flex shrink-0 items-center gap-2 text-xs text-muted">
               <input
-                class="min-w-0 w-full border-0 bg-transparent text-lg tabular-nums outline-offset-0"
                 v-model.number="form.break_minutes"
+                :aria-label="copy.breakDuration"
+                aria-describedby="break-duration-hint"
+                class="h-7 w-16 rounded-md border border-line bg-paper px-2 text-xs tabular-nums"
                 type="number"
                 min="1"
                 max="120"
                 required
-              /><span class="whitespace-nowrap text-xs">{{ copy.minutes }}</span>
-            </div></label
+              />
+              {{ copy.minutes }}
+            </span>
+          </label>
+          <div
+            class="mx-3.5 flex min-h-[52px] items-center justify-between gap-4 border-t border-line py-1.5"
           >
+            <label for="focus-mode" class="min-w-0 text-xs">
+              {{ copy.focusMode }}
+              <span id="focus-mode-hint" class="mt-0.5 block leading-normal text-faint">
+                {{ form.focus_mode === 'manual' ? copy.manualFocusHint : copy.timedFocusHint }}
+              </span>
+            </label>
+            <div class="relative shrink-0">
+              <select
+                id="focus-mode"
+                v-model="form.focus_mode"
+                :aria-label="copy.focusMode"
+                aria-describedby="focus-mode-hint"
+                class="compact-select"
+                :disabled="busy"
+              >
+                <option value="manual">{{ copy.manualFocus }}</option>
+                <option value="timed">{{ copy.timedFocus }}</option></select
+              ><ChevronDown
+                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <div
+            class="mx-3.5 flex min-h-[52px] items-center justify-between gap-4 border-t border-line py-1.5"
+          >
+            <div>
+              <label for="notifications" class="text-xs">{{ copy.reminders }}</label>
+              <p id="notifications-hint" class="mt-0.5 text-xs leading-normal text-faint">
+                {{ copy.targetReminderHint }}
+              </p>
+            </div>
+            <span class="relative flex h-5 w-9 shrink-0">
+              <input
+                id="notifications"
+                v-model="form.notifications"
+                class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-ink"
+                type="checkbox"
+                role="switch"
+                aria-describedby="notifications-hint"
+              />
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface transition-transform peer-checked:translate-x-4 peer-checked:bg-paper"
+              ></span>
+            </span>
+          </div>
         </div>
-        <p class="mt-3 text-xs leading-relaxed text-faint">{{ copy.nextSession }}</p>
       </section>
-      <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
-        <Bell :size="18" :stroke-width="1.6" class="text-muted" />
-        <div>
-          <label for="notifications">{{ copy.reminders }}</label>
-          <p class="mt-1.5 text-xs leading-relaxed text-faint">{{ copy.reminderHint }}</p>
-        </div>
-        <span class="relative ml-auto flex h-5 w-9 shrink-0">
-          <input
-            id="notifications"
-            v-model="form.notifications"
-            class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-ink"
-            type="checkbox"
-            role="switch"
-          /><span
-            aria-hidden="true"
-            class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface transition-transform peer-checked:translate-x-4 peer-checked:bg-paper"
-          ></span>
-        </span>
-      </div>
-      <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
-        <Languages :size="18" :stroke-width="1.6" class="text-muted" /><label for="locale">{{
-          copy.language
-        }}</label
-        ><select
-          class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
-          id="locale"
-          :value="settings.locale"
-          :disabled="busy"
-          @change="choosePreference('locale', $event)"
-        >
-          <option value="zh-CN">简体中文</option>
-          <option value="en-US">English</option>
-        </select>
-      </div>
-      <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
-        <Monitor :size="18" :stroke-width="1.6" class="text-muted" />
-        <div>
-          <label for="appearance">{{ copy.appearance }}</label>
-          <p
-            v-if="settings.appearance === 'system'"
-            class="mt-1.5 text-xs leading-relaxed text-faint"
+      <section class="mt-4" :aria-label="copy.pageSettings">
+        <h2 class="mb-2.5 text-sm font-medium">{{ copy.pageSettings }}</h2>
+        <div class="rounded-xl border border-line bg-surface">
+          <div class="flex min-h-12 items-center justify-between gap-4 px-3.5 py-2">
+            <label for="locale" class="text-xs">{{ copy.language }}</label>
+            <div class="relative shrink-0">
+              <select
+                id="locale"
+                class="compact-select"
+                :value="settings.locale"
+                :disabled="busy"
+                @change="choosePreference('locale', $event)"
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="en-US">English</option></select
+              ><ChevronDown
+                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <div
+            class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
           >
-            {{ copy.followSystemHint }}
-          </p>
+            <label for="appearance" class="text-xs">{{ copy.appearance }}</label>
+            <div class="relative shrink-0">
+              <select
+                id="appearance"
+                class="compact-select"
+                :value="settings.appearance"
+                :disabled="busy"
+                @change="choosePreference('appearance', $event)"
+              >
+                <option value="system">{{ copy.followSystem }}</option>
+                <option value="light">{{ copy.light }}</option>
+                <option value="dark">{{ copy.dark }}</option></select
+              ><ChevronDown
+                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <div
+            class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
+          >
+            <label for="visual-series" class="text-xs">{{ copy.visualSeries }}</label>
+            <div class="relative shrink-0">
+              <select
+                id="visual-series"
+                class="compact-select"
+                :value="settings.visual_series"
+                :disabled="busy"
+                @change="choosePreference('visual_series', $event)"
+              >
+                <option v-for="series in availableSeries" :key="series.id" :value="series.id">
+                  {{ series.id === 'coffee' ? copy.coffeeSeriesShort : series.name[locale] }}
+                </option></select
+              ><ChevronDown
+                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
         </div>
-        <select
-          id="appearance"
-          class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
-          :value="settings.appearance"
-          :disabled="busy"
-          @change="choosePreference('appearance', $event)"
-        >
-          <option value="system">{{ copy.followSystem }}</option>
-          <option value="light">{{ copy.light }}</option>
-          <option value="dark">{{ copy.dark }}</option>
-        </select>
-      </div>
-      <div class="flex min-h-[73px] items-center gap-3 border-t border-line py-3.5">
-        <Layers3 :size="18" :stroke-width="1.6" class="text-muted" />
-        <label for="visual-series">{{ copy.visualSeries }}</label>
-        <select
-          id="visual-series"
-          class="ml-auto max-w-[150px] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs"
-          :value="settings.visual_series"
-          :disabled="busy"
-          @change="choosePreference('visual_series', $event)"
-        >
-          <option v-for="series in availableSeries" :key="series.id" :value="series.id">
-            {{ series.name[locale] }}
-          </option>
-        </select>
-      </div>
-      <div class="flex justify-end pt-4">
-        <button class="button primary" type="submit" :disabled="busy">
-          <Check :size="15" />{{ copy.saveSettings }}
+      </section>
+      <div class="flex justify-end pb-2 pt-6">
+        <button class="button primary compact" type="submit" :disabled="busy">
+          <Check :size="14" />{{ copy.saveSettings }}
         </button>
       </div>
     </form>
+    <UpdateSettings />
   </section>
 </template>

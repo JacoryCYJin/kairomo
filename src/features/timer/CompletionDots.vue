@@ -1,12 +1,44 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import SeriesReward from '../../shared/series/SeriesReward.vue';
 import type { SeriesId } from '../../shared/series/types';
 import { clock, copy } from '../../shared/i18n';
 import type { Session } from '../../shared/ipc/types';
+import { api, desktop } from '../../shared/ipc/client';
 import { completionDots } from './completions';
 const props = defineProps<{ records: Session[]; seriesId: SeriesId }>();
-const dots = computed(() => completionDots(props.records, props.seriesId));
+const now = ref(new Date());
+const updateDate = () => {
+  now.value = new Date();
+};
+let midnight: ReturnType<typeof setTimeout> | undefined;
+let disposed = false;
+let unlistenOpened: (() => void) | undefined;
+function scheduleMidnight() {
+  clearTimeout(midnight);
+  updateDate();
+  const date = now.value;
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+  midnight = setTimeout(scheduleMidnight, Math.max(1, next - date.getTime()));
+}
+onMounted(async () => {
+  scheduleMidnight();
+  window.addEventListener('focus', scheduleMidnight);
+  document.addEventListener('visibilitychange', scheduleMidnight);
+  if (desktop) {
+    const unlisten = await api.onTimerOpened(scheduleMidnight);
+    if (disposed) unlisten();
+    else unlistenOpened = unlisten;
+  }
+});
+onUnmounted(() => {
+  disposed = true;
+  unlistenOpened?.();
+  clearTimeout(midnight);
+  window.removeEventListener('focus', scheduleMidnight);
+  document.removeEventListener('visibilitychange', scheduleMidnight);
+});
+const dots = computed(() => completionDots(props.records, props.seriesId, now.value));
 const description = (record: Session) =>
   `${copy.value.completedFocus} · ${clock(record.duration_ms)}`;
 </script>

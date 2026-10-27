@@ -32,7 +32,10 @@ pub fn write(path: &str, records: &[Session]) -> Result<(), String> {
                 .as_bytes(),
         )
         .map_err(|e| e.to_string())?;
-        for s in records {
+        for s in records
+            .iter()
+            .filter(|s| s.kind == Kind::Focus && s.ended_at_ms.is_some())
+        {
             let stamp = |ms: i64| {
                 chrono::DateTime::from_timestamp_millis(ms)
                     .map(|d| d.to_rfc3339())
@@ -41,11 +44,7 @@ pub fn write(path: &str, records: &[Session]) -> Result<(), String> {
             let line = format!(
                 "{},{},{},{},{},{},{},{}\r\n",
                 cell(&s.id),
-                if s.kind == Kind::Focus {
-                    "focus"
-                } else {
-                    "break"
-                },
+                "focus",
                 cell(&s.title),
                 cell(&stamp(s.started_at_ms)),
                 cell(&stamp(s.ended_at_ms.unwrap_or(s.started_at_ms))),
@@ -71,5 +70,22 @@ mod tests {
     fn spreadsheet_titles_cannot_be_formulas() {
         assert_eq!(cell("  =SUM(1,2)"), "\"'  =SUM(1,2)\"");
         assert_eq!(cell("a,\"b\"\n"), "\"a,\"\"b\"\"\n\"");
+    }
+    #[test]
+    fn csv_excludes_legacy_rest_and_incomplete_sessions() {
+        let path =
+            std::env::temp_dir().join(format!("kairomo-export-{}.csv", uuid::Uuid::new_v4()));
+        let mut engine = timer_core::Engine::default();
+        engine.start("focus".into(), "Read".into(), 1000).unwrap();
+        let focus = engine.switch("rest".into(), 2000).unwrap();
+        let ongoing = engine.state.current.as_ref().unwrap().clone();
+        engine.resume(2500).unwrap();
+        let rest = engine.finish(3000).unwrap();
+        write(path.to_str().unwrap(), &[focus, rest, ongoing]).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(content.lines().count(), 2);
+        assert!(content.contains(",focus,"));
+        assert!(!content.contains(",break,"));
     }
 }

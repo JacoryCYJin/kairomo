@@ -11,6 +11,7 @@ const defaults: Snapshot = {
     break_minutes: 10,
     locale: 'zh-CN',
     notifications: true,
+    focus_mode: 'manual',
     appearance: 'system',
     visual_series: 'coffee',
   },
@@ -26,6 +27,7 @@ export function useKairomo() {
     busy = ref(false),
     error = ref(''),
     notice = ref('');
+  const saved = ref(0);
   const unlisten: (() => void)[] = [];
   let disposed = false;
   function apply(s: Snapshot) {
@@ -67,7 +69,7 @@ export function useKairomo() {
   }
   async function act(action: Action, title = '') {
     await operate(async () => {
-      apply(await api.action(action, title));
+      apply(await api.action(action, title, state.value.current?.id ?? null, state.value.phase));
       await refresh();
     });
   }
@@ -84,7 +86,7 @@ export function useKairomo() {
   async function configure(settings: Settings) {
     await operate(async () => {
       apply(await api.settings(settings));
-      notice.value = copy.value.saved;
+      saved.value += 1;
     });
   }
   async function preferences(preferences: Partial<Preferences>) {
@@ -181,6 +183,7 @@ export function useKairomo() {
     busy,
     error,
     notice,
+    saved,
     connect,
     act,
     cancelSession,

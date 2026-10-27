@@ -12,6 +12,19 @@
   #app {
     @apply min-h-full;
   }
+  html.details-window,
+  html.details-window body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .details-content {
+    scrollbar-width: none;
+  }
+  .details-content::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
   button,
   input,
   select {
@@ -25,13 +38,13 @@
   }
   button:focus-visible,
   a:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--muted);
     outline-offset: 3px;
   }
   input:focus-visible,
   select:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: 1px solid var(--muted);
+    outline-offset: 1px;
   }
   svg {
     @apply shrink-0;
@@ -61,6 +74,9 @@
   }
   .compact {
     @apply min-h-8 px-2.5 py-1.5;
+  }
+  .compact-select {
+    @apply h-7 w-24 appearance-none rounded-md border border-line bg-paper pl-1 pr-4 text-xs;
   }
   .icon-button {
     @apply inline-flex size-8 items-center justify-center rounded-lg p-0 text-muted enabled:hover:bg-hover enabled:hover:text-ink;

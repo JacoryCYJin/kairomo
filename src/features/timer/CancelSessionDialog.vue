@@ -8,7 +8,7 @@ const props = defineProps<{
   cancelSession: (id: string) => Promise<boolean>;
 }>();
 const modal = ref<HTMLDialogElement | null>(null);
-const keep = ref<HTMLButtonElement | null>(null);
+const heading = ref<HTMLHeadingElement | null>(null);
 const expectedId = ref('');
 const failed = ref(false);
 function close() {
@@ -22,7 +22,7 @@ async function open() {
   failed.value = false;
   await nextTick();
   modal.value?.showModal();
-  keep.value?.focus();
+  heading.value?.focus({ preventScroll: true });
 }
 async function confirm() {
   if (!expectedId.value || props.busy) return;
@@ -51,7 +51,7 @@ defineExpose({ open });
 <template>
   <dialog
     ref="modal"
-    class="modal"
+    class="m-auto w-72 max-w-[90vw] rounded-xl border border-line bg-surface p-5 text-left text-ink shadow-lg backdrop:bg-black/20"
     aria-labelledby="cancel-session-title"
     aria-describedby="cancel-session-hint"
     :aria-busy="busy"
@@ -59,14 +59,33 @@ defineExpose({ open });
     @keydown.esc.stop
     @mousedown.stop
   >
-    <h2 id="cancel-session-title">{{ copy.confirmCancelSession }}</h2>
-    <p id="cancel-session-hint">{{ copy.discardSessionHint }}</p>
-    <p v-if="failed" class="!text-danger" role="alert">{{ copy.cancelSessionError }}</p>
-    <div class="modal-actions">
-      <button ref="keep" class="button secondary" :disabled="busy" @click="close">
+    <h2
+      ref="heading"
+      tabindex="-1"
+      id="cancel-session-title"
+      class="m-0 text-base font-semibold outline-none"
+    >
+      {{ copy.confirmCancelSession }}
+    </h2>
+    <p id="cancel-session-hint" class="mb-0 mt-2 text-xs leading-relaxed text-muted">
+      {{ copy.discardSessionHint }}
+    </p>
+    <p v-if="failed" class="mb-0 mt-2 text-xs leading-relaxed text-danger" role="alert">
+      {{ copy.cancelSessionError }}
+    </p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button
+        class="button secondary min-w-20 !min-h-8 !px-3 !py-1.5"
+        :disabled="busy"
+        @click="close"
+      >
         {{ copy.keepSession }}
       </button>
-      <button class="button danger" :disabled="busy || !expectedId" @click="confirm">
+      <button
+        class="button danger min-w-20 !min-h-8 !px-3 !py-1.5"
+        :disabled="busy || !expectedId"
+        @click="confirm"
+      >
         {{ copy.discardSession }}
       </button>
     </div>
