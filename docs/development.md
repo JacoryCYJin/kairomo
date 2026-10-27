@@ -2,7 +2,7 @@
 
 ## 环境
 
-Node 22.13+（.node-version 为本次验证版本），Rust stable，rustfmt、clippy，以及目标平台 Tauri 前置依赖。使用 npm 与根 Cargo Workspace，不引入其他包管理器。
+Node 22.13+（.node-version 为本次验证版本）、Rust stable（含 rustfmt、clippy）。macOS 需要 Xcode 工具；Windows 需要 MSVC C++ 构建工具与 WebView2。具体依赖见 [Tauri 官方前置要求](https://v2.tauri.app/start/prerequisites/)。使用 npm 与根 Cargo Workspace，不引入其他包管理器。
 
 ```bash
 rustup component add rustfmt clippy
@@ -11,6 +11,21 @@ npm run tauri -- dev
 ```
 
 若 Cargo 已安装但未在 PATH，先执行 `. "$HOME/.cargo/env"`。启动前 `bash scripts/dev.sh status` 检查本项目；默认前端端口 1420，严格拒绝自动换端口。不要启停其他项目。
+
+## 开发启动与脚本
+
+在本仓库根目录使用 `bash scripts/dev.sh <action>`，可用动作为 `start|stop|restart|status|logs|list|build|beta|help`。脚本仅管理本项目，当前工作区外层脚本尚未接入 Kairomo。
+
+```bash
+bash scripts/dev.sh status
+bash scripts/dev.sh start
+bash scripts/dev.sh logs
+bash scripts/dev.sh stop
+```
+
+开发模式显示为 Kairomo Dev，使用独立数据，可与日常 Beta 并存。脚本 `stop` 只停止脚本管理的开发进程；日常 Beta 使用菜单栏右键菜单的 Quit。`status` 不代表日常 Beta 是否正在运行。
+
+`build` 生成 `target/debug/bundle/macos/Kairomo Dev.app` 调试应用；`beta` 调用 Beta 打包流程。`npm run build` 只构建前端，不生成桌面应用包。
 
 ## 检查
 
@@ -34,7 +49,9 @@ macOS 日常 Beta：`~/Library/Application Support/com.jacorycyjin.kairomo/kairo
 
 ## 发布边界
 
-0.1.0-beta.1 为首个本地 Beta，使用 `npm run build:beta` 打包；内置签名更新由用户确认安装，本次不发布线上版本。详见 [Beta 打包与更新](releases.md)。正式 macOS 对外分发另做 Developer ID、公证；Windows 另做签名和安装验证。当前不申请系统级权限、不注册自动启动、不配置开机服务。
+使用 `npm run build:beta` 或 `bash scripts/dev.sh beta` 生成 Beta app、DMG、签名更新包和发布清单；这两个命令不安装、不上传，也不创建 GitHub Release。Beta 通过 GitHub prerelease 手动发布，内置更新由用户确认后安装。构建、签名密钥与发布操作见 [Beta 打包与更新](releases.md)。
+
+macOS Beta 使用 ad-hoc 签名，尚未进行 Developer ID 签名与 Apple 公证。Windows 可用 `npm run tauri -- build --debug --no-bundle` 检查构建，安装包仍需另做签名和安装验证。当前不申请系统级权限、不注册自动启动、不配置开机服务。
 
 ## 手工验收
 
@@ -49,3 +66,13 @@ macOS 日常 Beta：`~/Library/Application Support/com.jacorycyjin.kairomo/kairo
 - 英文切换完整；导出、修正、删除及取消操作有效。
 - 正常退出与异常退出后打开，均不会自动累计离线时间。
 - 通知被系统禁用时计时继续；存储失败不得假报保存成功。
+
+## 项目文档
+
+本仓库独立维护 Kairomo；三个 Rust 包由 Cargo Workspace 统一管理，前端按功能模块拆分，不依赖工作区其他产品的运行时或源码。
+
+- [项目规则](../AGENTS.md)
+- [架构与包边界](architecture.md)
+- [计时与恢复规则](timing-rules.md)
+- [展示系列](display-series.md)
+- [Beta 打包与更新](releases.md)
