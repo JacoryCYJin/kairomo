@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
-import { Check, ChevronDown } from 'lucide-vue-next';
+import { Check } from 'lucide-vue-next';
 import { availableSeries } from '../../shared/series/catalog';
 import { copy, locale } from '../../shared/i18n';
 import type { Preferences, Settings } from '../../shared/ipc/types';
+import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import UpdateSettings from './UpdateSettings.vue';
 const props = defineProps<{ settings: Settings; busy: boolean }>();
 const emit = defineEmits<{ save: [Settings]; preference: [Partial<Preferences>] }>();
@@ -24,11 +25,7 @@ watch(
     if (form.focus_mode === previous.focus_mode) form.focus_mode = next.focus_mode;
   },
 );
-function choosePreference(key: keyof Preferences, event: Event) {
-  const select = event.target as HTMLSelectElement;
-  const value = select.value;
-  // Display only the persisted value; a failed save leaves the original choice selected.
-  select.value = props.settings[key];
+function choosePreference(key: keyof Preferences, value: string) {
   if (key === 'locale') emit('preference', { locale: value as Preferences['locale'] });
   else if (key === 'appearance')
     emit('preference', { appearance: value as Preferences['appearance'] });
@@ -95,22 +92,18 @@ function choosePreference(key: keyof Preferences, event: Event) {
                 {{ form.focus_mode === 'manual' ? copy.manualFocusHint : copy.timedFocusHint }}
               </span>
             </label>
-            <div class="relative shrink-0">
-              <select
-                id="focus-mode"
-                v-model="form.focus_mode"
-                :aria-label="copy.focusMode"
-                aria-describedby="focus-mode-hint"
-                class="compact-select"
-                :disabled="busy"
-              >
-                <option value="manual">{{ copy.manualFocus }}</option>
-                <option value="timed">{{ copy.timedFocus }}</option></select
-              ><ChevronDown
-                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
-                aria-hidden="true"
-              />
-            </div>
+            <SettingsSelect
+              id="focus-mode"
+              :model-value="form.focus_mode"
+              :label="copy.focusMode"
+              describedby="focus-mode-hint"
+              :options="[
+                { value: 'manual', label: copy.manualFocus },
+                { value: 'timed', label: copy.timedFocus },
+              ]"
+              @update:model-value="form.focus_mode = $event as Settings['focus_mode']"
+              :disabled="busy"
+            />
           </div>
           <div
             class="mx-3.5 flex min-h-[52px] items-center justify-between gap-4 border-t border-line py-1.5"
@@ -143,63 +136,52 @@ function choosePreference(key: keyof Preferences, event: Event) {
         <div class="rounded-xl border border-line bg-surface">
           <div class="flex min-h-12 items-center justify-between gap-4 px-3.5 py-2">
             <label for="locale" class="text-xs">{{ copy.language }}</label>
-            <div class="relative shrink-0">
-              <select
-                id="locale"
-                class="compact-select"
-                :value="settings.locale"
-                :disabled="busy"
-                @change="choosePreference('locale', $event)"
-              >
-                <option value="zh-CN">简体中文</option>
-                <option value="en-US">English</option></select
-              ><ChevronDown
-                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
-                aria-hidden="true"
-              />
-            </div>
+            <SettingsSelect
+              id="locale"
+              :model-value="settings.locale"
+              :label="copy.language"
+              :options="[
+                { value: 'zh-CN', label: '简体中文' },
+                { value: 'en-US', label: 'English' },
+              ]"
+              @update:model-value="choosePreference('locale', $event)"
+              :disabled="busy"
+            />
           </div>
           <div
             class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
           >
             <label for="appearance" class="text-xs">{{ copy.appearance }}</label>
-            <div class="relative shrink-0">
-              <select
-                id="appearance"
-                class="compact-select"
-                :value="settings.appearance"
-                :disabled="busy"
-                @change="choosePreference('appearance', $event)"
-              >
-                <option value="system">{{ copy.followSystem }}</option>
-                <option value="light">{{ copy.light }}</option>
-                <option value="dark">{{ copy.dark }}</option></select
-              ><ChevronDown
-                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
-                aria-hidden="true"
-              />
-            </div>
+            <SettingsSelect
+              id="appearance"
+              :model-value="settings.appearance"
+              :label="copy.appearance"
+              :options="[
+                { value: 'system', label: copy.followSystem },
+                { value: 'light', label: copy.light },
+                { value: 'dark', label: copy.dark },
+              ]"
+              @update:model-value="choosePreference('appearance', $event)"
+              :disabled="busy"
+            />
           </div>
           <div
             class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
           >
             <label for="visual-series" class="text-xs">{{ copy.visualSeries }}</label>
-            <div class="relative shrink-0">
-              <select
-                id="visual-series"
-                class="compact-select"
-                :value="settings.visual_series"
-                :disabled="busy"
-                @change="choosePreference('visual_series', $event)"
-              >
-                <option v-for="series in availableSeries" :key="series.id" :value="series.id">
-                  {{ series.id === 'coffee' ? copy.coffeeSeriesShort : series.name[locale] }}
-                </option></select
-              ><ChevronDown
-                class="pointer-events-none absolute right-1 top-1/2 size-3 -translate-y-1/2 text-muted"
-                aria-hidden="true"
-              />
-            </div>
+            <SettingsSelect
+              id="visual-series"
+              :model-value="settings.visual_series"
+              :label="copy.visualSeries"
+              :options="
+                availableSeries.map((series) => ({
+                  value: series.id,
+                  label: series.id === 'coffee' ? copy.coffeeSeriesShort : series.name[locale],
+                }))
+              "
+              @update:model-value="choosePreference('visual_series', $event)"
+              :disabled="busy"
+            />
           </div>
         </div>
       </section>

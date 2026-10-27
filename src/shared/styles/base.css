@@ -75,9 +75,6 @@
   .compact {
     @apply min-h-8 px-2.5 py-1.5;
   }
-  .compact-select {
-    @apply h-7 w-24 appearance-none rounded-md border border-line bg-paper pl-1 pr-4 text-xs;
-  }
   .icon-button {
     @apply inline-flex size-8 items-center justify-center rounded-lg p-0 text-muted enabled:hover:bg-hover enabled:hover:text-ink;
   }

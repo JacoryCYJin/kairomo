@@ -58,10 +58,7 @@ impl Repository for SqliteRepository {
     }
     fn persist(&mut self, state: &Snapshot, completed: &[Session]) -> Result<(), Self::Error> {
         let tx = self.connection.transaction()?;
-        for s in completed
-            .iter()
-            .filter(|s| s.kind == Kind::Focus && s.ended_at_ms.is_some() && !s.intervals.is_empty())
-        {
+        for s in completed.iter().filter(|s| s.is_recordable_focus()) {
             tx.execute(
                 "INSERT INTO sessions(id, started_at_ms, data) VALUES(?1, ?2, ?3)",
                 params![s.id, s.started_at_ms, serde_json::to_string(s)?],
@@ -119,14 +116,14 @@ mod tests {
         let mut repo = db();
         let mut engine = Engine::default();
         engine.start("focus".into(), "Read".into(), 1000).unwrap();
-        engine.advance(30_000, 31_000);
-        let focus = engine.switch("rest".into(), 31_000).unwrap();
-        engine.resume(31_000).unwrap();
-        engine.advance(10_000, 41_000);
-        engine.pause(41_000, "manual").unwrap();
+        engine.advance(60_000, 61_000);
+        let focus = engine.switch("rest".into(), 61_000).unwrap();
+        engine.resume(61_000).unwrap();
+        engine.advance(10_000, 71_000);
+        engine.pause(71_000, "manual").unwrap();
         let checkpoint = engine.state.clone();
         let ongoing_rest = checkpoint.current.as_ref().unwrap().clone();
-        let rest = engine.finish(41_000).unwrap();
+        let rest = engine.finish(71_000).unwrap();
         let mut unfinished_focus = focus.clone();
         unfinished_focus.id = "unfinished".into();
         unfinished_focus.ended_at_ms = None;
@@ -142,16 +139,17 @@ mod tests {
         let current = loaded.current.unwrap();
         assert_eq!(current.kind, Kind::Break);
         assert_eq!(current.duration_ms, 10_000);
-        assert_eq!(repo.sessions().unwrap()[0].duration_ms, 30_000);
+        assert_eq!(repo.sessions().unwrap()[0].duration_ms, 60_000);
     }
     #[test]
     fn legacy_rest_rows_are_excluded_without_deleting_existing_data() {
         let mut repo = db();
         let mut engine = Engine::default();
         engine.start("focus".into(), "Read".into(), 1000).unwrap();
-        let focus = engine.switch("rest".into(), 2000).unwrap();
-        engine.resume(2500).unwrap();
-        let rest = engine.finish(3000).unwrap();
+        engine.advance(60_000, 61_000);
+        let focus = engine.switch("rest".into(), 61_000).unwrap();
+        engine.resume(61_500).unwrap();
+        let rest = engine.finish(62_000).unwrap();
         repo.connection
             .execute(
                 "INSERT INTO sessions(id,started_at_ms,data) VALUES(?1,?2,?3)",
@@ -175,9 +173,10 @@ mod tests {
         let mut repo = db();
         let mut engine = Engine::default();
         engine.start("first".into(), "Read".into(), 1000).unwrap();
-        let first = engine.switch("rest".into(), 2000).unwrap();
-        engine.resume(2500).unwrap();
-        engine.switch("prepared".into(), 3000).unwrap();
+        engine.advance(60_000, 61_000);
+        let first = engine.switch("rest".into(), 61_000).unwrap();
+        engine.resume(61_500).unwrap();
+        engine.switch("prepared".into(), 62_000).unwrap();
         let waiting = engine.state.clone();
         // Simulate malformed legacy input without bypassing the engine's guard.
         let mut never_started = waiting.current.as_ref().unwrap().clone();
@@ -194,13 +193,13 @@ mod tests {
         let mut e = Engine::default();
         e.start("one".into(), "阅读,\"Rust\"\nnotes".into(), 1000)
             .unwrap();
-        e.advance(42_000, 43_000);
-        let record = e.finish(43_000).unwrap();
+        e.advance(60_000, 61_000);
+        let record = e.finish(61_000).unwrap();
         repo.persist(&e.state, std::slice::from_ref(&record))
             .unwrap();
         assert_eq!(repo.sessions().unwrap()[0].title, record.title);
         let mut new = Engine::default();
-        new.start("next".into(), "next".into(), 44_000).unwrap();
+        new.start("next".into(), "next".into(), 62_000).unwrap();
         // A duplicate completed ID rolls back the checkpoint in the same transaction.
         assert!(repo.persist(&new.state, &[record]).is_err());
         assert!(repo.load_checkpoint().unwrap().unwrap().current.is_none());
@@ -212,7 +211,16 @@ mod tests {
         engine.start("legacy".into(), "阅读".into(), 1000).unwrap();
         engine.advance(30_000, 31_000);
         let record = engine.finish(31_000).unwrap();
-        repo.persist(&engine.state, std::slice::from_ref(&record))
+        repo.persist(&engine.state, &[]).unwrap();
+        repo.connection
+            .execute(
+                "INSERT INTO sessions(id,started_at_ms,data) VALUES(?1,?2,?3)",
+                params![
+                    record.id,
+                    record.started_at_ms,
+                    serde_json::to_string(&record).unwrap()
+                ],
+            )
             .unwrap();
         let mut legacy = serde_json::to_value(&engine.state).unwrap();
         legacy["settings"]
@@ -251,6 +259,64 @@ mod tests {
             assert_eq!(loaded.settings.locale, "en-US");
             assert_eq!(loaded.settings.appearance, appearance);
         }
+    }
+    #[test]
+    fn new_records_require_one_minute_and_pauses_do_not_count() {
+        let mut repo = db();
+        for duration in [59_999, 60_000, 60_001] {
+            let mut engine = Engine::default();
+            engine
+                .start(duration.to_string(), "Boundary".into(), 1000)
+                .unwrap();
+            engine.advance(duration, 1000 + duration as i64);
+            let done = engine.finish(1000 + duration as i64).unwrap();
+            repo.persist(&engine.state, &[done]).unwrap();
+        }
+        let records = repo.sessions().unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records.iter().any(|s| s.duration_ms == 60_000));
+        assert!(records.iter().any(|s| s.duration_ms == 60_001));
+        let mut engine = Engine::default();
+        engine
+            .start("paused".into(), "Paused".into(), 1000)
+            .unwrap();
+        engine.advance(30_000, 31_000);
+        engine.pause(31_000, "manual").unwrap();
+        engine.advance(600_000, 631_000);
+        repo.persist(&engine.state, &[]).unwrap();
+        assert_eq!(
+            repo.load_checkpoint()
+                .unwrap()
+                .unwrap()
+                .current
+                .unwrap()
+                .duration_ms,
+            30_000
+        );
+        engine.resume(631_000).unwrap();
+        engine.advance(30_000, 661_000);
+        let done = engine.finish(661_000).unwrap();
+        repo.persist(&engine.state, &[done]).unwrap();
+        let mut saved = repo
+            .sessions()
+            .unwrap()
+            .into_iter()
+            .find(|s| s.id == "paused")
+            .unwrap();
+        assert_eq!(saved.duration_ms, 60_000);
+        assert_eq!(saved.intervals.len(), 2);
+        saved.duration_ms = 30_000;
+        saved.corrected = true;
+        repo.update_session(&saved).unwrap();
+        assert_eq!(
+            repo.sessions()
+                .unwrap()
+                .into_iter()
+                .find(|s| s.id == "paused")
+                .unwrap()
+                .duration_ms,
+            30_000
+        );
     }
     #[test]
     fn migration_reopens_without_losing_data() {

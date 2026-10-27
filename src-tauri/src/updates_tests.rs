@@ -18,6 +18,7 @@ fn signed_update_checks_downloads_installs_and_retains_data_in_an_isolated_app()
     let database = folder.path().join("beta-data.sqlite3");
     let mut runtime = crate::runtime::Runtime::open(&database).unwrap();
     runtime.action("start", "Retained focus").unwrap();
+    runtime.engine.advance(60_000, 61_000);
     runtime.action("switch", "").unwrap();
     runtime.shutdown().unwrap();
     let current_id = runtime.engine.state.current.as_ref().unwrap().id.clone();

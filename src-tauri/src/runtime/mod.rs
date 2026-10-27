@@ -5,9 +5,7 @@ use std::{
     sync::Mutex,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
-use timer_core::{
-    Engine, Interval, Kind, Phase, Repository, Session, Settings, Snapshot, TargetReached,
-};
+use timer_core::{Engine, Interval, Phase, Repository, Session, Settings, Snapshot, TargetReached};
 use timer_storage::SqliteRepository;
 use uuid::Uuid;
 
@@ -92,7 +90,7 @@ impl Runtime {
         let completed = advance
             .completed
             .into_iter()
-            .filter(|s| s.kind == Kind::Focus && !s.intervals.is_empty())
+            .filter(Session::is_recordable_focus)
             .collect();
         (next, advance.reached, completed, measured)
     }
@@ -160,11 +158,7 @@ impl Runtime {
             _ => return Err("invalid_action".into()),
         }
         .map_err(|e| e.to_string())?;
-        completed.retain(|session| {
-            session.kind == Kind::Focus
-                && session.ended_at_ms.is_some()
-                && !session.intervals.is_empty()
-        });
+        completed.retain(Session::is_recordable_focus);
         self.commit_step(next, &completed, measured, reached)
     }
     #[cfg(any(target_os = "macos", test))]
@@ -268,6 +262,7 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use timer_core::Kind;
     fn with_runtime(test: impl FnOnce(&mut Runtime, &std::path::Path)) {
         let folder = std::env::temp_dir().join(format!("kairomo-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -276,6 +271,34 @@ mod tests {
         test(&mut runtime, &file);
         drop(runtime);
         std::fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
+    fn minute_threshold_applies_to_finish_and_switch() {
+        for action in ["finish", "switch"] {
+            for duration in [59_999, 60_000, 60_001] {
+                with_runtime(|rt, path| {
+                    rt.action("start", "Boundary").unwrap();
+                    rt.engine.advance(duration, now_ms());
+                    rt.engine.pause(now_ms(), "manual").unwrap();
+                    rt.action(action, "").unwrap();
+                    let records = rt.repository.sessions().unwrap();
+                    assert_eq!(records.len(), usize::from(duration >= 60_000));
+                    if let Some(record) = records.first() {
+                        assert_eq!(record.duration_ms, duration);
+                    }
+                    let restored = Runtime::open(path).unwrap();
+                    assert_eq!(
+                        restored.engine.state.phase,
+                        if action == "finish" {
+                            Phase::Idle
+                        } else {
+                            Phase::Paused
+                        }
+                    );
+                    assert_eq!(restored.repository.sessions().unwrap().len(), records.len());
+                });
+            }
+        }
     }
     #[test]
     fn running_checkpoint_recovers_without_counting_offline_time() {
@@ -376,6 +399,7 @@ mod tests {
             timed_runtime(rt);
             let before = rt.engine.state.clone();
             let mut duplicate = rt.engine.clone();
+            duplicate.advance(500, now_ms());
             let record = duplicate.finish(now_ms()).unwrap();
             rt.repository
                 .persist(&before, std::slice::from_ref(&record))
@@ -437,6 +461,7 @@ mod tests {
     fn task_switch_correction_and_delete_roundtrip() {
         with_runtime(|rt, _| {
             rt.action("start", "Read").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.last_tick = Instant::now() - std::time::Duration::from_secs(2);
             rt.action("switch", "").unwrap();
             let first = rt.repository.sessions().unwrap().remove(0);
@@ -465,6 +490,7 @@ mod tests {
     fn switching_in_both_directions_waits_and_never_saves_rest() {
         with_runtime(|rt, _| {
             rt.action("start", "Read").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.last_tick = Instant::now() - std::time::Duration::from_secs(1);
             rt.action("switch", "").unwrap();
             assert_eq!(rt.engine.state.phase, Phase::Paused);
@@ -490,8 +516,9 @@ mod tests {
                 1
             );
             assert!(records.iter().all(|s| s.kind == Kind::Focus));
-            assert!(records[0].duration_ms >= 1000 && records[0].duration_ms < 2000);
+            assert!(records[0].duration_ms >= 61_000 && records[0].duration_ms < 62_000);
             rt.action("resume", "").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.last_tick = Instant::now() - std::time::Duration::from_secs(1);
             rt.action("finish", "").unwrap();
             assert_eq!(rt.repository.sessions().unwrap().len(), 2);
@@ -501,6 +528,7 @@ mod tests {
     fn prepared_phases_survive_reopening_and_reject_actions_until_started() {
         with_runtime(|rt, path| {
             rt.action("start", "Read").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.action("switch", "").unwrap();
             let mut reopened = Runtime::open(path).unwrap();
             assert_eq!(reopened.engine.state.pause_reason.as_deref(), Some("ready"));
@@ -524,6 +552,9 @@ mod tests {
                 );
                 assert_eq!(reopened.repository.sessions().unwrap().len(), 1);
                 reopened.action("resume", "").unwrap();
+                if kind == Kind::Focus {
+                    reopened.engine.advance(60_000, now_ms());
+                }
                 reopened.action("pause", "").unwrap();
                 reopened.action("switch", "").unwrap();
             }
@@ -542,6 +573,7 @@ mod tests {
     fn finishing_rest_saves_only_idle_checkpoint_and_preserves_focus_history() {
         with_runtime(|rt, path| {
             rt.action("start", "Read").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.action("switch", "").unwrap();
             rt.action("resume", "").unwrap();
             let before = rt.repository.sessions().unwrap();
@@ -601,6 +633,7 @@ mod tests {
             rt.action("start", "task").unwrap();
             let revision = rt.engine.state.revision;
             // Duplicate completion IDs force a transaction failure after preparing state.
+            rt.engine.advance(60_000, now_ms());
             let mut next = rt.engine.clone();
             let record = next.finish(now_ms()).unwrap();
             rt.repository
@@ -615,6 +648,7 @@ mod tests {
     fn cancellation_persists_idle_without_saving_or_deleting_history() {
         with_runtime(|rt, path| {
             rt.action("start", "completed").unwrap();
+            rt.engine.advance(60_000, now_ms());
             rt.action("switch", "").unwrap();
             let rest_id = rt.engine.state.current.as_ref().unwrap().id.clone();
             rt.action("resume", "").unwrap();
