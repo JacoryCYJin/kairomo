@@ -14,6 +14,7 @@ export function seriesFixtures(count: number, now = Date.now()): Session[] {
       ended_at_ms: end,
       duration_ms: duration,
       target_ms: 50 * 60_000,
+      focus_mode: 'manual',
       corrected: false,
       intervals: [{ started_at_ms: end - duration, ended_at_ms: end, duration_ms: duration }],
     };

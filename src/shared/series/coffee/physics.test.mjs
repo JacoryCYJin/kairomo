@@ -1,141 +1,93 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBeanWorld, SCENE_WIDTH, SCENE_HEIGHT } from './physics.ts';
+import { Body } from 'cannon-es';
+import { createBeanWorld } from './physics.ts';
 import { createBeanLayoutJob } from './layouts.ts';
-function settled(count, prefix = 'preview') {
-  const world = createBeanWorld(Array.from({ length: count }, (_, i) => `${prefix}-${i}`));
+function settle(count, prefix = 'preview') {
+  const ids = Array.from({ length: count }, (_, i) => `${prefix}-${i}`);
+  const world = createBeanWorld(ids);
   let steps = 0;
-  while (!world.step() && steps < 2400) steps++;
-  assert.ok(steps < 2400, 'solver must finish and release its frame loop');
+  while (!world.step() && steps++ < 7000) {
+    // Advance the same fixed-step world used by the background layout worker.
+  }
+  assert.ok(steps < 7000, 'the solver must settle and stop');
   return world;
 }
-for (const n of [0, 8, 20, 40, 80, 110, 120, 500])
-  test(`${n} records settle within a fixed non-scrolling scene`, () => {
-    const world = settled(n);
-    assert.equal(world.bodies.length, Math.min(n, 120));
-    for (const b of world.bodies) {
-      assert.ok(b.isSleeping);
-      assert.ok(b.bounds.min.x >= 0 && b.bounds.max.x <= SCENE_WIDTH);
-      assert.ok(b.bounds.min.y >= 0 && b.bounds.max.y <= SCENE_HEIGHT);
+const inside = ({ body }) => (body.position.x / 70) ** 2 + (body.position.z / 36) ** 2 < 1.04;
+for (const count of [0, 8, 20, 40, 80, 104, 120, 160]) {
+  test(`${count} records settle with bounded display count and retain spatial depth`, () => {
+    const world = settle(count);
+    assert.equal(world.bodies.length, Math.min(count, 120));
+    for (const { body } of world.bodies) {
+      assert.equal(body.sleepState, Body.SLEEPING);
+      assert.ok(Number.isFinite(body.position.x + body.position.y + body.position.z));
+      assert.ok(body.position.y > 6, 'beans cannot fall through the tabletop');
     }
-    const outside = world.bodies.filter((b) => b.position.x < 168 || b.position.x > 312);
-    if (n > 80) assert.ok(outside.length > 0, 'overflow must reach the exterior ground');
-    if (n <= 40) assert.equal(outside.length, 0);
-    const before = world.bodies.map((b) => ({ ...b.position }));
+    if (count <= 40) assert.ok(world.bodies.every(inside), 'an unfilled jar must retain its beans');
+    if (count >= 104) {
+      assert.ok(
+        world.bodies.some((b) => !inside(b)),
+        'a full jar must naturally spill',
+      );
+      const interior = world.bodies.filter(inside);
+      assert.ok(interior.length > 60, 'the jar must fill before spilling');
+      assert.ok(Math.max(...interior.map((b) => b.body.position.y)) > 170);
+    }
+    if (count >= 8) {
+      const depths = world.bodies.map((b) => b.body.position.z);
+      assert.ok(Math.max(...depths) - Math.min(...depths) > 10, 'beans must occupy front and back');
+    }
+    const before = world.bodies.map((b) => b.body.position.clone());
     world.step();
     assert.deepEqual(
-      world.bodies.map((b) => ({ ...b.position })),
+      world.bodies.map((b) => b.body.position),
       before,
+      'settled positions must stay static',
     );
     world.dispose();
   });
-test('static layout publishes only after settling and reuses cached geometry', () => {
-  const ids = Array.from({ length: 40 }, (_, i) => `static-${i}`);
-  const job = createBeanLayoutJob(ids);
-  assert.equal(job.result, undefined);
-  assert.equal(job.step(1), undefined);
-  let result;
-  for (let i = 0; i < 100 && !result; i++) result = job.step();
-  assert.ok(result);
-  assert.equal(result.poses.length, 40);
-  const next = createBeanLayoutJob(ids);
-  assert.equal(next.result, result);
-  job.dispose();
-  next.dispose();
+}
+test('every bean enters above the open mouth, never from preselected exterior piles', () => {
+  const world = createBeanWorld(Array.from({ length: 104 }, (_, i) => `entry-${i}`));
+  let previous = 0;
+  for (let step = 0; step < 7000; step++) {
+    const done = world.step();
+    if (world.released > previous) {
+      const body = world.bodies[previous].body;
+      assert.ok(Math.abs(body.position.x) < 40 && Math.abs(body.position.z) < 20);
+      assert.ok(body.position.y > 240);
+      previous = world.released;
+    }
+    if (done) break;
+  }
+  assert.equal(previous, 104);
+  world.dispose();
 });
-test('display saturation preserves the same first 120 records and cancellation stops computation', () => {
-  const ids = Array.from({ length: 160 }, (_, i) => `cap-${i}`);
+test('task identities do not leak from a partially filled curved vessel', () => {
+  for (let seed = 0; seed < 3; seed++) {
+    const world = settle(40, `curved-${seed}`);
+    assert.ok(world.bodies.every(inside));
+    world.dispose();
+  }
+});
+test('projection preserves record identities, depth, caching and cancellation', () => {
+  const ids = Array.from({ length: 104 }, (_, i) => `projection-${i}`);
   const job = createBeanLayoutJob(ids);
   let result;
-  for (let i = 0; i < 100 && !result; i++) result = job.step();
-  assert.equal(result.poses.length, 120);
-  assert.equal(createBeanLayoutJob(ids.slice(0, 120)).result, result);
-  assert.equal(ids.length, 160);
+  for (let i = 0; i < 10000 && !result; i++) result = job.step(240);
+  assert.ok(result);
+  assert.deepEqual(
+    result.poses.map((p) => p.id),
+    ids,
+  );
+  assert.equal(new Set(result.poses.map((p) => p.id)).size, 104);
+  assert.ok(result.poses.some((p) => p.layer === 'front'));
+  assert.ok(result.poses.some((p) => p.inside && p.depth < 0));
+  assert.ok(result.poses.some((p) => p.inside && p.depth > 0));
+  assert.ok(result.poses.every((p) => p.squash >= 0.68 && p.squash <= 1));
+  assert.equal(createBeanLayoutJob(ids).result, result);
   const cancelled = createBeanLayoutJob(['cancelled']);
   cancelled.dispose();
   assert.equal(cancelled.step(), undefined);
   job.dispose();
-});
-test('different task identities cannot tunnel through the exterior floor', () => {
-  for (let seed = 0; seed < 10; seed++) {
-    const world = settled(120, `fixture-${seed}`);
-    assert.ok(world.bodies.every((b) => b.bounds.max.y <= SCENE_HEIGHT));
-    assert.ok(world.bodies.every((b) => b.bounds.min.x >= 0 && b.bounds.max.x <= SCENE_WIDTH));
-    world.dispose();
-  }
-});
-test('overflow spreads into separate low piles on both sides of the open jar', () => {
-  for (const count of [110, 120]) {
-    const world = settled(count);
-    for (const side of ['left', 'right']) {
-      const pile = world.bodies.filter((b) =>
-        side === 'left' ? b.position.x < 168 : b.position.x > 312,
-      );
-      assert.ok(pile.length > 5, 'both sides need a distinct pile');
-      const width =
-        Math.max(...pile.map((b) => b.bounds.max.x)) - Math.min(...pile.map((b) => b.bounds.min.x));
-      const height =
-        Math.max(...pile.map((b) => b.bounds.max.y)) - Math.min(...pile.map((b) => b.bounds.min.y));
-      assert.ok(width > height, 'overflow should spread out rather than form a narrow column');
-      assert.ok(height < 120, 'exterior piles must remain lower than the jar');
-    }
-    world.dispose();
-  }
-});
-test('exterior beans appear only after the jar is filled across the entire mouth', () => {
-  for (const count of [90, 100, 110, 120]) {
-    const world = settled(count);
-    const exterior = world.bodies.filter(
-      (b) => world.foregroundDepth.has(b.label) || b.position.x < 168 || b.position.x > 312,
-    );
-    const interior = world.bodies.filter(
-      (b) => !world.foregroundDepth.has(b.label) && b.position.x >= 176 && b.position.x <= 304,
-    );
-    if (exterior.length) {
-      assert.ok(interior.length > 80, 'the initial estimate must not cap an unfilled jar');
-      for (const x of [188, 208, 228, 248, 268, 288]) {
-        const top = Math.min(
-          ...interior
-            .filter((b) => b.bounds.min.x <= x + 5 && b.bounds.max.x >= x - 5)
-            .map((b) => b.bounds.min.y),
-        );
-        assert.ok(top <= 40, 'no empty band may remain below the rim while beans spill outside');
-      }
-    }
-    world.dispose();
-  }
-});
-test('foreground depth preserves one visible bean per record and appears only after filling', () => {
-  for (const count of [20, 80, 110, 120, 160]) {
-    const ids = Array.from({ length: count }, (_, i) => `preview-${i}`);
-    const job = createBeanLayoutJob(ids);
-    let result = job.result;
-    for (let step = 0; step < 100 && !result; step++) result = job.step();
-    assert.ok(result);
-    assert.equal(result.poses.length, Math.min(count, 120));
-    assert.equal(new Set(result.poses.map((pose) => pose.id)).size, result.poses.length);
-    assert.deepEqual(
-      result.poses.map((pose) => pose.id),
-      ids.slice(0, 120),
-    );
-    const front = result.poses.filter((pose) => pose.layer === 'front');
-    if (count <= 80) assert.equal(front.length, 0, 'unfilled jars cannot have foreground spills');
-    else {
-      assert.ok(front.length >= 3, 'overflow needs a visible foreground group');
-      assert.ok(
-        front.some((pose) => pose.x > 180 && pose.x < 300 && pose.y > 230),
-        'some beans must lie in front of the jar, below its base',
-      );
-      assert.ok(
-        Math.max(...front.map((pose) => pose.y)) - Math.min(...front.map((pose) => pose.y)) > 3,
-        'foreground beans must not all sit on one horizontal line',
-      );
-    }
-    assert.ok(
-      result.poses.every(
-        (pose) => pose.x > 0 && pose.x < SCENE_WIDTH && pose.y > 0 && pose.y + 11 < SCENE_HEIGHT,
-      ),
-    );
-    job.dispose();
-  }
 });

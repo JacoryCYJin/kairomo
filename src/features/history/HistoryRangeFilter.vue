@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { copy } from '../../shared/i18n';
 import { customPeriod } from './history';
 import type { HistoryFilter } from './history';
+import HistoryDateRange from './HistoryDateRange.vue';
 const props = defineProps<{ range: HistoryFilter; from: string; to: string; today: string }>();
 const emit = defineEmits<{ range: [HistoryFilter]; custom: [from: string, to: string] }>();
 const draftFrom = ref(props.from),
@@ -16,10 +17,11 @@ watch(
     invalid.value = false;
   },
 );
-function apply() {
-  invalid.value = !customPeriod(draftFrom.value, draftTo.value) || draftTo.value > props.today;
-  if (!invalid.value) emit('custom', draftFrom.value, draftTo.value);
-}
+watch([draftFrom, draftTo], ([from, to]) => {
+  if (props.range !== 'custom') return;
+  invalid.value = !customPeriod(from, to) || to > props.today;
+  if (!invalid.value && (from !== props.from || to !== props.to)) emit('custom', from, to);
+});
 </script>
 <template>
   <div class="mb-5">
@@ -39,30 +41,9 @@ function apply() {
         <option value="all">{{ copy.allHistory }}</option>
       </select>
     </div>
-    <form v-if="range === 'custom'" class="mt-3" novalidate @submit.prevent="apply">
-      <div class="flex flex-wrap items-end gap-2">
-        <label class="min-w-0 text-xs text-muted"
-          >{{ copy.rangeStart
-          }}<input
-            v-model="draftFrom"
-            class="mt-1 block w-36 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-xs"
-            type="date"
-            :max="today"
-            required
-        /></label>
-        <label class="min-w-0 text-xs text-muted"
-          >{{ copy.rangeEnd
-          }}<input
-            v-model="draftTo"
-            class="mt-1 block w-36 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-xs"
-            type="date"
-            :min="draftFrom"
-            :max="today"
-            required
-        /></label>
-        <button class="button secondary compact" type="submit">{{ copy.applyRange }}</button>
-      </div>
+    <div v-if="range === 'custom'" class="mt-3">
+      <HistoryDateRange v-model:from="draftFrom" v-model:to="draftTo" :today="today" />
       <p v-if="invalid" class="mt-2 text-xs text-danger" role="alert">{{ copy.invalidRange }}</p>
-    </form>
+    </div>
   </div>
 </template>

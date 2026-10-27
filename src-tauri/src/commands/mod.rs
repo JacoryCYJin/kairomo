@@ -1,6 +1,6 @@
 use crate::runtime::AppState;
 use tauri::{Emitter, State};
-use timer_core::{Repository, Session, Settings, Snapshot};
+use timer_core::{Phase, Repository, Session, Settings, Snapshot};
 #[tauri::command]
 pub async fn sync_window_appearance(
     window: tauri::WebviewWindow,
@@ -24,12 +24,19 @@ pub fn timer_action(
     state: State<'_, AppState>,
     action: String,
     title: Option<String>,
+    expected_session_id: Option<String>,
+    expected_phase: Phase,
 ) -> Result<Snapshot, String> {
     let snapshot = state
         .0
         .lock()
         .map_err(|_| "runtime_unavailable")?
-        .action(&action, title.as_deref().unwrap_or(""))?;
+        .action_for(
+            &action,
+            title.as_deref().unwrap_or(""),
+            expected_session_id.as_deref(),
+            expected_phase,
+        )?;
     let _ = app.emit("timer:changed", &snapshot);
     Ok(snapshot)
 }

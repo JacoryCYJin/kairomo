@@ -15,7 +15,8 @@ function session(id, minutes, ended, kind = 'focus') {
     corrected: false,
   };
 }
-const ids = (records) => completionDots(records).map((record) => record.id);
+const ids = (records, now = new Date(0)) =>
+  completionDots(records, 'coffee', now).map((record) => record.id);
 
 test('only finished focus sessions become dots, including saved short sessions', () => {
   const current = { ...session('active', 50, 3000), ended_at_ms: null };
@@ -69,4 +70,43 @@ test('history corrections and deletions are reflected when dots are rebuilt', ()
     '4',
     '5',
   ]);
+});
+
+const at = (day, hour = 0, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
+
+test('only completions within the current local day appear, including exact midnight', () => {
+  const records = [
+    session('yesterday', 25, at(26, 23, 59)),
+    session('midnight', 25, at(27)),
+    session('today', 40, at(27, 12)),
+    session('tomorrow', 50, at(28)),
+  ];
+  assert.deepEqual(ids(records, new Date(at(27, 15))), ['midnight', 'today']);
+});
+
+test('a new day clears yesterday beans without deleting any records', () => {
+  const records = Array.from({ length: 8 }, (_, index) =>
+    session(String(index), 25, at(26, 10, index)),
+  );
+  assert.equal(ids(records, new Date(at(26, 23, 59))).length, 6);
+  assert.deepEqual(ids(records, new Date(at(27))), []);
+  assert.equal(records.length, 8);
+});
+
+test('a focus spanning midnight earns its bean on the day it finishes', () => {
+  const record = session('overnight', 40, at(27, 0, 20));
+  assert.deepEqual(ids([record], new Date(at(26, 23, 59))), []);
+  assert.deepEqual(ids([record], new Date(at(27, 1))), ['overnight']);
+});
+
+test('today excludes rest and ongoing focus and applies the six-bean replacement independently', () => {
+  const records = [
+    session('old-long', 120, at(26, 22)),
+    ...Array.from({ length: 7 }, (_, index) =>
+      session(String(index), index + 1, at(27, 10, index)),
+    ),
+    session('break', 20, at(27, 12), 'break'),
+    { ...session('active', 50, at(27, 13)), ended_at_ms: null },
+  ];
+  assert.deepEqual(ids(records, new Date(at(27, 14))), ['1', '2', '3', '4', '5', '6']);
 });

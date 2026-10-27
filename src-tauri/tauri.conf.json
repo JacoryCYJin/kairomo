@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Kairomo",
-  "version": "0.1.0",
-  "identifier": "com.jacorycyjin.kairomo",
+  "productName": "Kairomo Dev",
+  "version": "0.1.0-beta.2",
+  "identifier": "com.jacorycyjin.kairomo.dev",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Kairomo",
+        "title": "Kairomo Dev",
         "width": 360,
         "height": 280,
         "resizable": false,
@@ -25,14 +25,16 @@
       },
       {
         "label": "details",
-        "title": "Kairomo",
+        "title": "Kairomo Dev",
         "url": "index.html?view=settings",
         "width": 620,
         "height": 640,
         "minWidth": 520,
         "minHeight": 520,
         "visible": false,
-        "center": true
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -53,6 +55,12 @@
     ],
     "macOS": {
       "minimumSystemVersion": "12.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NzRBRDYxN0RCRDk2OUUKUldTZWxyMTlZYTEweEJjWlVQa0JrWExtaTI0cG8rMm80aTYyR3FoajV3N2FYdlNvNnFNWGllaS8K",
+      "requireSignedVersion": true
     }
   }
 }

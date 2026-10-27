@@ -4,22 +4,30 @@ import { ChartNoAxesColumnIncreasing, SlidersHorizontal, X } from 'lucide-vue-ne
 import TimerView from '../features/timer/TimerView.vue';
 import HistoryView from '../features/history/HistoryView.vue';
 import SettingsView from '../features/settings/SettingsView.vue';
+import StatusToast from '../shared/ui/StatusToast.vue';
 import { copy } from '../shared/i18n';
 import { api, desktop } from '../shared/ipc/client';
 import { syncAppearance } from '../shared/ipc/appearance';
-import { startWindowDrag } from '../shared/ipc/window';
+import { startWindowDrag, windowTitle } from '../shared/ipc/window';
 import { useKairomo } from './useKairomo';
+import { restThemeStyle } from '../shared/series/rest';
 const auxiliary = new URLSearchParams(window.location.search).has('view');
 const view = ref<'history' | 'settings'>('settings');
 const shell = ref<HTMLElement | null>(null);
+const title = ref('Kairomo');
 const k = useKairomo();
-const { state, records, ready, busy, error, notice } = k;
+const { state, records, ready, busy, error, notice, saved } = k;
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(media.matches);
 const dark = computed(
   () =>
     state.value.settings.appearance === 'dark' ||
     (state.value.settings.appearance === 'system' && systemDark.value),
+);
+const resting = computed(() => !auxiliary && state.value.current?.kind === 'break');
+const visualSeries = computed(() => state.value.settings.visual_series);
+const restStyle = computed(() =>
+  resting.value ? restThemeStyle(visualSeries.value, dark.value) : undefined,
 );
 watch(
   dark,
@@ -51,7 +59,6 @@ function applyTheme() {
 }
 function drag(event: MouseEvent) {
   if (
-    auxiliary ||
     !desktop ||
     event.button !== 0 ||
     event.detail !== 1 ||
@@ -59,6 +66,7 @@ function drag(event: MouseEvent) {
   )
     return;
   const target = event.target;
+  if (auxiliary && (!(target instanceof Element) || !target.closest('[data-toolbar]'))) return;
   if (
     !(target instanceof Element) ||
     target.closest('button, input, select, textarea, a, [role="button"], [contenteditable="true"]')
@@ -94,6 +102,8 @@ async function open(view: 'history' | 'settings') {
   }
 }
 onMounted(async () => {
+  if (auxiliary) document.documentElement.classList.add('details-window');
+  if (auxiliary && desktop) title.value = await windowTitle().catch(() => 'Kairomo');
   applyTheme();
   media.addEventListener('change', applyTheme);
   window.addEventListener('keydown', hide);
@@ -115,6 +125,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
+  if (auxiliary) document.documentElement.classList.remove('details-window');
   disposed = true;
   unlisten?.();
   media.removeEventListener('change', applyTheme);
@@ -126,10 +137,11 @@ onUnmounted(() => {
     ref="shell"
     :class="
       auxiliary
-        ? 'details-shell mx-auto max-w-[820px]'
-        : 'timer-shell group relative h-screen select-none overflow-auto focus:outline-none'
+        ? 'details-shell flex h-screen flex-col overflow-hidden bg-paper'
+        : 'timer-shell group relative h-screen select-none overflow-auto bg-paper focus:outline-none'
     "
     :tabindex="auxiliary ? undefined : -1"
+    :style="restStyle"
     @mousedown="drag"
   >
     <header
@@ -163,32 +175,41 @@ onUnmounted(() => {
         </button>
       </div>
     </header>
-    <nav
+    <header
       v-else
-      class="sticky top-0 z-10 flex justify-center gap-1 border-b border-line bg-paper px-5 py-3.5"
-      :aria-label="copy.navigation"
+      data-toolbar
+      class="z-10 flex h-12 shrink-0 select-none items-center justify-between gap-4 border-b border-line bg-paper pr-4 pt-px"
+      :class="desktop ? 'pl-[102px]' : 'pl-7'"
     >
-      <button
-        class="rounded-lg px-5 py-2 text-xs"
-        :class="view === 'history' ? 'bg-selected text-ink' : 'text-muted'"
-        @click="
-          view = 'history';
-          notice = '';
-        "
+      <span class="truncate text-sm font-semibold">{{ title }}</span>
+      <nav
+        class="flex shrink-0 gap-0.5 rounded-lg bg-surface-muted p-0.5"
+        :aria-label="copy.navigation"
       >
-        {{ copy.history }}
-      </button>
-      <button
-        class="rounded-lg px-5 py-2 text-xs"
-        :class="view === 'settings' ? 'bg-selected text-ink' : 'text-muted'"
-        @click="
-          view = 'settings';
-          notice = '';
-        "
-      >
-        {{ copy.settings }}
-      </button>
-    </nav>
+        <button
+          class="rounded-md px-3 py-1 text-xs"
+          :aria-pressed="view === 'history'"
+          :class="view === 'history' ? 'bg-selected text-ink' : 'text-muted'"
+          @click="
+            view = 'history';
+            notice = '';
+          "
+        >
+          {{ copy.history }}
+        </button>
+        <button
+          class="rounded-md px-3 py-1 text-xs"
+          :aria-pressed="view === 'settings'"
+          :class="view === 'settings' ? 'bg-selected text-ink' : 'text-muted'"
+          @click="
+            view = 'settings';
+            notice = '';
+          "
+        >
+          {{ copy.settings }}
+        </button>
+      </nav>
+    </header>
     <div v-if="!desktop" class="banner">{{ copy.previewHint }}</div>
     <div v-else-if="error" class="banner error" role="alert">
       {{ error
@@ -204,33 +225,40 @@ onUnmounted(() => {
         <X :size="14" />
       </button>
     </div>
+    <StatusToast v-if="auxiliary" :trigger="saved" :message="copy.saved" />
     <TimerView
       v-if="!auxiliary"
       :state="state"
+      :dark="dark"
       :records="records"
       :cancel-session="k.cancelSession"
       :busy="busy || !ready"
       @action="k.act($event)"
     />
-    <div v-else class="px-7 pb-6">
-      <HistoryView
-        v-if="view === 'history'"
-        :records="records"
-        :busy="busy || !ready"
-        :current="state.current"
-        :checkpoint="state.checkpoint_at_ms"
-        :series-id="state.settings.visual_series"
-        @export="k.exportRecords"
-        @remove="k.remove"
-        @correct="k.correct"
-      />
-      <SettingsView
-        v-else
-        :settings="state.settings"
-        :busy="busy || !ready"
-        @save="k.configure"
-        @preference="k.preferences"
-      />
+    <div
+      v-else
+      class="details-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-none"
+    >
+      <div class="mx-auto max-w-[820px] px-7 pb-6">
+        <HistoryView
+          v-if="view === 'history'"
+          :records="records"
+          :busy="busy || !ready"
+          :current="state.current"
+          :checkpoint="state.checkpoint_at_ms"
+          :series-id="state.settings.visual_series"
+          @export="k.exportRecords"
+          @remove="k.remove"
+          @correct="k.correct"
+        />
+        <SettingsView
+          v-else
+          :settings="state.settings"
+          :busy="busy || !ready"
+          @save="k.configure"
+          @preference="k.preferences"
+        />
+      </div>
     </div>
   </main>
 </template>

@@ -7,7 +7,7 @@ use tauri::{
     Emitter, Manager,
 };
 use tauri_plugin_notification::NotificationExt;
-use timer_core::{Kind, Phase, Snapshot};
+use timer_core::{Kind, Phase, Snapshot, TargetReached};
 pub mod windows;
 pub async fn sync_window_appearance(
     window: tauri::WebviewWindow,
@@ -25,7 +25,14 @@ pub fn show(app: &tauri::AppHandle) {
     windows::show(app);
 }
 pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let open = MenuItem::with_id(app, "open", "打开 Kairomo / Open", true, None::<&str>)?;
+    let name = app.config().product_name.as_deref().unwrap_or("Kairomo");
+    let open = MenuItem::with_id(
+        app,
+        "open",
+        format!("打开 {name} / Open"),
+        true,
+        None::<&str>,
+    )?;
     let pause = MenuItem::with_id(
         app,
         "toggle",
@@ -33,10 +40,16 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
-    let quit = MenuItem::with_id(app, "quit", "退出 Kairomo / Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        format!("退出 {name} / Quit"),
+        true,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(app, &[&open, &pause, &quit])?;
     let mut tray = TrayIconBuilder::with_id("timer")
-        .tooltip("Kairomo — Time for what matters")
+        .tooltip(format!("{name} — Time for what matters"))
         .menu(&menu)
         .show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
@@ -93,38 +106,51 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     {
         macos::observe(app);
         macos::configure_popup(app).map_err(std::io::Error::other)?;
+        // Lay out the fixed-width menu-bar item before the first one-second tick.
+        let snapshot = app
+            .state::<AppState>()
+            .0
+            .lock()
+            .map_err(|_| std::io::Error::other("runtime_unavailable"))?
+            .engine
+            .state
+            .clone();
+        update(app, &snapshot, None);
     }
     Ok(())
 }
-pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
+pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: Option<TargetReached>) {
     if let Some(tray) = app.tray_by_id("timer") {
         let resting = state
             .current
             .as_ref()
             .is_some_and(|session| session.kind == Kind::Break);
-        #[cfg(target_os = "macos")]
-        update_tray_icon(&tray, resting);
+        let overtime = state
+            .current
+            .as_ref()
+            .is_some_and(|session| session.duration_ms >= session.target_ms);
         let label = if let Some(s) = &state.current {
             let seconds = if s.duration_ms >= s.target_ms {
                 (s.duration_ms - s.target_ms) / 1000
             } else {
                 (s.target_ms - s.duration_ms).div_ceil(1000)
             };
-            format!(
-                "{}{:02}:{:02}",
-                if s.duration_ms >= s.target_ms {
-                    "+"
-                } else {
-                    ""
-                },
-                seconds / 60,
-                seconds % 60
-            )
+            format!("{}{}", if overtime { "+" } else { "" }, menu_time(seconds))
         } else {
-            format!("{:02}:00", state.settings.focus_minutes)
+            menu_time(u64::from(state.settings.focus_minutes) * 60)
         };
         #[cfg(target_os = "macos")]
-        let _ = tray.set_title(Some(&label));
+        macos::update_tray(
+            &tray,
+            label.trim_start_matches('+'),
+            if resting {
+                1
+            } else if overtime {
+                2
+            } else {
+                0
+            },
+        );
         let stage = match (resting, state.settings.locale.as_str()) {
             (true, "zh-CN") => "休息",
             (false, "zh-CN") => "专注",
@@ -133,17 +159,19 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
         };
         let _ = tray.set_tooltip(Some(format!("Kairomo · {stage} · {label}")));
     }
-    if reached && state.settings.notifications {
-        let focus = state
-            .current
-            .as_ref()
-            .is_some_and(|s| s.kind == Kind::Focus);
+    if let Some(event) = reached.filter(|_| state.settings.notifications) {
+        let focus = event.kind == Kind::Focus;
+        let completed = event.completed;
         let zh = state.settings.locale == "zh-CN";
-        let body = match (focus, zh) {
-            (true, true) => "已达到专注目标。继续计时，准备好后再休息。",
-            (false, true) => "休息目标已到。准备好后再开始专注。",
-            (true, false) => "Focus target reached. Still tracking — take a break when ready.",
-            (false, false) => "Break target reached. Resume focus when you are ready.",
+        let body = match (focus, completed, zh) {
+            (true, true, true) => "本轮专注已完成。准备好后点击开始休息。",
+            (true, true, false) => "Focus complete. Start your break when ready.",
+            (true, false, true) => "已达到专注目标。继续计时，准备好后再休息。",
+            (true, false, false) => {
+                "Focus target reached. Still tracking — take a break when ready."
+            }
+            (false, _, true) => "休息已结束。准备好后点击开始专注。",
+            (false, _, false) => "Break complete. Start focus when you are ready.",
         };
         if let Err(error) = app
             .notification()
@@ -157,22 +185,38 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: bool) {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn update_tray_icon(tray: &tauri::tray::TrayIcon, resting: bool) {
-    static LAST_STYLE: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
-    let Ok(mut previous) = LAST_STYLE.lock() else {
-        return;
-    };
-    if *previous == Some(resting) {
-        return;
-    }
-    let icon = if resting {
-        tauri::include_image!("icons/tray-rest.png")
+// This cap belongs only to menu-bar presentation, never the engine's duration.
+fn menu_time(seconds: u64) -> String {
+    let seconds = seconds.min(99 * 3600 + 59 * 60 + 59);
+    if seconds < 3600 {
+        format!("{:02}:{:02}", seconds / 60, seconds % 60)
     } else {
-        tauri::include_image!("icons/tray.png")
-    };
-    // Templates follow macOS menu-bar contrast; the rest icon retains its amber color.
-    if tray.set_icon_with_as_template(Some(icon), !resting).is_ok() {
-        *previous = Some(resting);
+        format!(
+            "{:02}:{:02}:{:02}",
+            seconds / 3600,
+            seconds / 60 % 60,
+            seconds % 60
+        )
+    }
+}
+
+#[cfg(test)]
+mod menu_time_tests {
+    use super::menu_time;
+
+    #[test]
+    fn menu_time_switches_at_one_hour_and_clamps_only_its_output() {
+        for (seconds, expected) in [
+            (0, "00:00"),
+            (599, "09:59"),
+            (3599, "59:59"),
+            (3600, "01:00:00"),
+            (3601, "01:00:01"),
+            (359_999, "99:59:59"),
+            (360_000, "99:59:59"),
+            (u64::MAX, "99:59:59"),
+        ] {
+            assert_eq!(menu_time(seconds), expected);
+        }
     }
 }

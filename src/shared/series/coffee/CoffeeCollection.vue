@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import CoffeeReward from './CoffeeReward.vue';
+import { computed, useId } from 'vue';
+import ExteriorBean from './ExteriorBean.vue';
+import { compactOverflow } from './compactOverflow';
+import CollectionBean from './CollectionBean.vue';
 import { coffeeSeries, coffeeTier } from './definition';
 import { useCoffeeLayout } from './useCoffeeLayout';
 import { clock, copy, duration, locale } from '../../i18n';
 import type { Session } from '../../ipc/types';
+import { jarPath as jar } from './jarGeometry';
 const props = withDefaults(
   defineProps<{
     records: Session[];
@@ -16,22 +19,14 @@ const props = withDefaults(
 const visible = computed(() => props.records.slice(0, coffeeSeries.collection.displayLimit));
 const byId = computed(() => new Map(visible.value.map((record) => [record.id, record])));
 const { layout } = useCoffeeLayout(() => visible.value.map((record) => record.id));
-const viewBox = computed(() => {
-  const poses = layout.value?.poses ?? [];
-  // Frame the jar and every visible bean, not unused space reserved for a full
-  // spill. Keep a complete bean-sized margin so nothing is cropped at any angle.
-  const left = Math.min(166, ...poses.map((pose) => pose.x - 14)) - 10;
-  const right = Math.max(314, ...poses.map((pose) => pose.x + 14)) + 10;
-  const top = Math.min(30, ...poses.map((pose) => pose.y - 14)) - 10;
-  const bottom = Math.max(246, ...poses.map((pose) => pose.y + 14)) + 10;
-  return `${left} ${top} ${right - left} ${bottom - top}`;
-});
-const bodyPoses = computed(() => layout.value?.poses.filter((pose) => pose.layer === 'body') ?? []);
-const frontPoses = computed(() =>
-  (layout.value?.poses.filter((pose) => pose.layer === 'front') ?? []).sort((a, b) => a.y - b.y),
+const glassClip = `coffee-glass-${useId()}`;
+const packing = computed(() => compactOverflow(layout.value?.poses ?? []));
+const sorted = computed(() => [...packing.value.poses].sort((a, b) => a.depth - b.depth));
+const insidePoses = computed(() => sorted.value.filter((pose) => pose.inside));
+const backPoses = computed(() =>
+  sorted.value.filter((pose) => !pose.inside && pose.layer === 'body'),
 );
-const jar =
-  'M176 40V55Q176 62 172 70Q170 76 170 85V204Q170 220 186 226Q240 240 294 226Q310 220 310 204V85Q310 76 308 70Q304 62 304 55V40';
+const frontPoses = computed(() => sorted.value.filter((pose) => pose.layer === 'front'));
 function description(id: string) {
   const record = byId.value.get(id)!;
   return `${record.title || copy.value.untitled} · ${clock(record.duration_ms)} · ${coffeeTier(record.duration_ms).name[locale.value]}`;
@@ -47,13 +42,37 @@ function description(id: string) {
   >
     <div class="relative w-full" :class="fitHeight ? 'min-h-0 flex-1' : 'h-56 max-w-[400px]'">
       <svg
-        class="absolute inset-0 block size-full"
-        :viewBox="viewBox"
+        class="absolute inset-0 block size-full overflow-visible"
+        viewBox="156 20 168 236"
         preserveAspectRatio="xMidYMid meet"
         role="img"
         :aria-label="`${records.length} ${copy.beanCount}`"
         :aria-busy="!layout"
       >
+        <defs>
+          <clipPath :id="glassClip">
+            <path :d="jar" />
+            <rect x="156" y="-120" width="168" height="160" />
+          </clipPath>
+        </defs>
+        <ellipse cx="240" cy="234" rx="65" ry="7" class="fill-ink" opacity="0.055" />
+        <ellipse
+          v-for="shadow in packing.shadows"
+          :key="shadow.id"
+          :cx="shadow.x"
+          :cy="shadow.y"
+          :rx="shadow.rx"
+          :ry="shadow.ry"
+          class="fill-ink"
+          opacity="0.065"
+        />
+        <ExteriorBean
+          v-for="pose in backPoses"
+          :key="pose.id"
+          :pose="pose"
+          :duration="byId.get(pose.id)!.duration_ms"
+          :description="description(pose.id)"
+        />
         <path :d="jar" class="fill-surface-muted" />
         <path
           d="M176 40A64 6 0 0 1 304 40"
@@ -63,22 +82,24 @@ function description(id: string) {
           stroke-linecap="round"
         />
         <path d="M186 226Q240 212 294 226" class="stroke-line" fill="none" stroke-width="1" />
-        <g
-          v-for="pose in bodyPoses"
-          :key="pose.id"
-          :transform="`translate(${pose.x} ${pose.y}) rotate(${(pose.angle * 180) / Math.PI})`"
-          :data-bean-id="pose.id"
-          data-bean-layer="body"
-        >
-          <title>{{ description(pose.id) }}</title>
-          <CoffeeReward
+        <g :clip-path="`url(#${glassClip})`">
+          <CollectionBean
+            v-for="pose in insidePoses"
+            :key="pose.id"
+            :pose="pose"
             :duration="byId.get(pose.id)!.duration_ms"
-            x="-14"
-            y="-14"
-            width="28"
-            height="28"
+            :description="description(pose.id)"
           />
         </g>
+        <path :d="jar" class="fill-paper" opacity="0.07" />
+        <path
+          d="M178 82V196Q178 211 188 215"
+          class="stroke-paper"
+          opacity="0.65"
+          fill="none"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
         <path
           :d="jar"
           class="stroke-line-strong"
@@ -93,26 +114,17 @@ function description(id: string) {
           fill="none"
           stroke-width="1.4"
         />
-        <g
+        <ExteriorBean
           v-for="pose in frontPoses"
           :key="pose.id"
-          :transform="`translate(${pose.x} ${pose.y}) rotate(${(pose.angle * 180) / Math.PI})`"
-          :data-bean-id="pose.id"
-          data-bean-layer="front"
-        >
-          <title>{{ description(pose.id) }}</title>
-          <CoffeeReward
-            :duration="byId.get(pose.id)!.duration_ms"
-            x="-14"
-            y="-14"
-            width="28"
-            height="28"
-          />
-        </g>
+          :pose="pose"
+          :duration="byId.get(pose.id)!.duration_ms"
+          :description="description(pose.id)"
+        />
       </svg>
     </div>
     <strong class="mt-3 shrink-0 text-xl font-medium tracking-tight tabular-nums">{{
-      duration(total)
+      total === 0 ? copy.emptyCollection : duration(total)
     }}</strong>
   </section>
 </template>

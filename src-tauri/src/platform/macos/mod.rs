@@ -14,6 +14,42 @@ tauri_panel! {
 }
 static HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 extern "C" {
+    fn kairomo_update_tray(
+        item: *mut std::ffi::c_void,
+        label: *const std::ffi::c_char,
+        style: i32,
+        focus: *const u8,
+        focus_len: usize,
+        rest: *const u8,
+        rest_len: usize,
+    );
+}
+
+pub fn update_tray(tray: &tauri::tray::TrayIcon, label: &str, style: i32) {
+    let Ok(label) = std::ffi::CString::new(label) else {
+        return;
+    };
+    let _ = tray.with_inner_tray_icon(move |tray| {
+        if let Some(item) = tray.ns_status_item() {
+            let focus = include_bytes!("../../../icons/tray.png");
+            let rest = include_bytes!("../../../icons/tray-rest.png");
+            // SAFETY: with_inner_tray_icon runs on the main thread. The retained
+            // status item and CString outlive this synchronous AppKit call.
+            unsafe {
+                kairomo_update_tray(
+                    &*item as *const _ as *mut std::ffi::c_void,
+                    label.as_ptr(),
+                    style,
+                    focus.as_ptr(),
+                    focus.len(),
+                    rest.as_ptr(),
+                    rest.len(),
+                );
+            }
+        }
+    });
+}
+extern "C" {
     fn kairomo_set_window_appearance(window: *mut std::ffi::c_void, mode: i32);
 }
 pub async fn sync_window_appearance(
@@ -48,6 +84,7 @@ pub async fn sync_window_appearance(
 }
 extern "C" {
     fn kairomo_observe_sleep(callback: extern "C" fn());
+    fn kairomo_align_details_titlebar(window: *mut std::ffi::c_void);
 }
 extern "C" fn suspend() {
     let Some(app) = HANDLE.get() else {
@@ -69,6 +106,13 @@ extern "C" fn suspend() {
     };
 }
 pub fn observe(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("details") {
+        if let Ok(pointer) = window.ns_window() {
+            // SAFETY: setup runs on AppKit's main thread. The native observer is
+            // owned by this NSWindow and holds only a weak reference back to it.
+            unsafe { kairomo_align_details_titlebar(pointer) };
+        }
+    }
     if HANDLE.set(app.clone()).is_ok() {
         // SAFETY: registered once on main thread; static callback and AppHandle
         // outlive the NSWorkspace observer. The C shim does not retain pointers.

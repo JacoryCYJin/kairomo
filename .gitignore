@@ -12,4 +12,5 @@ target/
 !.env.example
 src-tauri/gen/
 *.p12
+*.key
 *.mobileprovision

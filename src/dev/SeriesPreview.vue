@@ -15,6 +15,7 @@ const settings = ref<Settings>({
   break_minutes: 10,
   locale: 'zh-CN',
   notifications: false,
+  focus_mode: 'manual',
   appearance: 'light',
   visual_series: 'coffee',
 });
