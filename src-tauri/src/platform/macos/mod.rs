@@ -18,6 +18,7 @@ extern "C" {
         item: *mut std::ffi::c_void,
         label: *const std::ffi::c_char,
         style: i32,
+        rest_appearance: i32,
         focus: *const u8,
         focus_len: usize,
         rest: *const u8,
@@ -25,7 +26,17 @@ extern "C" {
     );
 }
 
-pub fn update_tray(tray: &tauri::tray::TrayIcon, label: &str, style: i32) {
+pub fn update_tray(
+    tray: &tauri::tray::TrayIcon,
+    label: &str,
+    style: i32,
+    appearance: &timer_core::Appearance,
+) {
+    let rest_appearance = match appearance {
+        timer_core::Appearance::System => 0,
+        timer_core::Appearance::Light => 1,
+        timer_core::Appearance::Dark => 2,
+    };
     let Ok(label) = std::ffi::CString::new(label) else {
         return;
     };
@@ -40,6 +51,7 @@ pub fn update_tray(tray: &tauri::tray::TrayIcon, label: &str, style: i32) {
                     &*item as *const _ as *mut std::ffi::c_void,
                     label.as_ptr(),
                     style,
+                    rest_appearance,
                     focus.as_ptr(),
                     focus.len(),
                     rest.as_ptr(),

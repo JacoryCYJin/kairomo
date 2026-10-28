@@ -185,6 +185,7 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: Option<TargetRe
             } else {
                 0
             },
+            &state.settings.appearance,
         );
         let stage = if resting { copy.rest } else { copy.focus };
         let _ = tray.set_tooltip(Some(format!("Kairomo · {stage} · {label}")));
