@@ -42,6 +42,7 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 @interface KairomoTrayContent : NSView
 @property(nonatomic, copy) NSString *time;
 @property(nonatomic) NSInteger style;
+@property(nonatomic) NSInteger restAppearance;
 @property(nonatomic, strong) NSImage *focusIcon;
 @property(nonatomic, strong) NSImage *restIcon;
 @end
@@ -59,8 +60,16 @@ static CGFloat kairomo_tray_width(BOOL hours) {
     NSColor *color = NSColor.labelColor;
     NSColor *background = nil;
     if (self.style == 1) {
-        background = [NSColor colorWithSRGBRed:67.0/255 green:41.0/255 blue:28.0/255 alpha:1];
-        color = [NSColor colorWithSRGBRed:1 green:229.0/255 blue:201.0/255 alpha:1];
+        // Match coffeeSeries.rest's foreground and frontmost liquid layer.
+        // Only rest follows the saved app preference; other states keep their
+        // existing menu-bar appearance and palette.
+        BOOL restDark = self.restAppearance == 2 || (self.restAppearance == 0 && dark);
+        background = restDark
+            ? [NSColor colorWithSRGBRed:73.0/255 green:51.0/255 blue:41.0/255 alpha:1]
+            : [NSColor colorWithSRGBRed:191.0/255 green:141.0/255 blue:99.0/255 alpha:1];
+        color = restDark
+            ? [NSColor colorWithSRGBRed:231.0/255 green:199.0/255 blue:166.0/255 alpha:1]
+            : [NSColor colorWithSRGBRed:61.0/255 green:37.0/255 blue:24.0/255 alpha:1];
     } else if (self.style == 2) {
         background = dark
             ? [NSColor colorWithSRGBRed:69.0/255 green:55.0/255 blue:43.0/255 alpha:1]
@@ -106,16 +115,13 @@ static CGFloat kairomo_tray_width(BOOL hours) {
         CGContextRestoreGState(context);
         CFRelease(plusLine);
     } else {
-        NSImage *icon = self.style == 1 ? self.restIcon : self.focusIcon;
-        if (self.style == 0) {
-            NSImage *source = icon;
-            icon = [NSImage imageWithSize:source.size flipped:NO drawingHandler:^BOOL(NSRect rect) {
-                [source drawInRect:rect];
-                [color setFill];
-                NSRectFillUsingOperation(rect, NSCompositingOperationSourceAtop);
-                return YES;
-            }];
-        }
+        NSImage *source = self.style == 1 ? self.restIcon : self.focusIcon;
+        NSImage *icon = [NSImage imageWithSize:source.size flipped:NO drawingHandler:^BOOL(NSRect rect) {
+            [source drawInRect:rect];
+            [color setFill];
+            NSRectFillUsingOperation(rect, NSCompositingOperationSourceAtop);
+            return YES;
+        }];
         // Original marks keep their scale. Their visible right edge shares a
         // fixed anchor so a smaller plus cannot create a larger internal gap.
         [icon drawInRect:NSMakeRect(iconRight - icon.size.width,
@@ -133,7 +139,7 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 }
 @end
 
-void kairomo_update_tray(void *pointer, const char *label, int style,
+void kairomo_update_tray(void *pointer, const char *label, int style, int restAppearance,
                          const unsigned char *focus, size_t focusLength,
                          const unsigned char *rest, size_t restLength) {
     NSStatusItem *item = (__bridge NSStatusItem *)pointer;
@@ -162,9 +168,11 @@ void kairomo_update_tray(void *pointer, const char *label, int style,
             target.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         }
     }
-    if (![content.time isEqualToString:time] || content.style != style) {
+    if (![content.time isEqualToString:time] || content.style != style
+        || content.restAppearance != restAppearance) {
         content.time = time;
         content.style = style;
+        content.restAppearance = restAppearance;
         content.needsDisplay = YES;
         [button setAccessibilityLabel:[NSString stringWithFormat:@"%@ %@",
             style == 2 ? @"+" : (style == 1 ? @"Rest" : @"Focus"), time]];

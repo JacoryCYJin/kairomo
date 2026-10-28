@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    '新增繁体中文、自定义短句库与作者作品署名；支持当天／本周物理豆堆，优化小窗首次显示、设置自动保存及菜单栏状态。',
+    '新增繁体中文、自定义短句库与作者作品署名；支持当天／本周物理豆堆，优化小窗首次显示、设置自动保存及菜单栏状态；统一休息菜单栏与小窗配色，跟随应用外观设置。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {
