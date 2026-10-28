@@ -4,7 +4,29 @@ export type Kind = 'focus' | 'break';
 export type Phase = 'idle' | 'running' | 'paused';
 export type Appearance = 'system' | 'light' | 'dark';
 export type FocusMode = 'manual' | 'timed';
+export interface Phrase {
+  id: string;
+  text: string;
+  author?: string;
+  source_title?: string;
+  source_kind?: 'book' | 'poem' | 'song' | 'other' | null;
+}
+export interface Phrases {
+  enabled: boolean;
+  mode: 'fixed' | 'random';
+  entries: Phrase[];
+  selected_id: string | null;
+}
+export const emptyPhrases = (): Phrases => ({
+  enabled: false,
+  mode: 'fixed',
+  entries: [],
+  selected_id: null,
+});
+export type BeanRange = 'day' | 'week';
 export interface Settings {
+  bean_range: BeanRange;
+  phrases: Phrases;
   focus_minutes: number;
   break_minutes: number;
   locale: AppLocale;
@@ -32,6 +54,8 @@ export interface Session {
   corrected: boolean;
 }
 export interface Snapshot {
+  bean_random_seed: string | null;
+  phrase_selection?: { session_id: string; entry_id: string | null } | null;
   revision: number;
   phase: Phase;
   current: Session | null;

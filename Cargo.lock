@@ -1997,7 +1997,7 @@ dependencies = [
 
 [[package]]
 name = "kairomo-desktop"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64 0.22.1",
  "cc",
@@ -4315,7 +4315,7 @@ dependencies = [
 
 [[package]]
 name = "timer-core"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -4324,7 +4324,7 @@ dependencies = [
 
 [[package]]
 name = "timer-storage"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "rusqlite",
  "serde_json",

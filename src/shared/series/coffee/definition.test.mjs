@@ -29,7 +29,6 @@ test('catalog contains only implemented series and unknown identifiers fall back
   );
   assert.equal(seriesFor('money'), coffeeSeries);
   assert.equal(seriesFor(undefined), coffeeSeries);
-  assert.equal(coffeeSeries.summary.limit, 6);
   assert.equal(coffeeSeries.collection.insideCapacity, 80);
   assert.equal(coffeeSeries.collection.displayLimit, 120);
 });

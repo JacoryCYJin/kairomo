@@ -37,7 +37,7 @@ test('series text remains readable above and below every liquid surface in both 
         false,
         'Rest must inherit the normal background',
       );
-      for (const foreground of [tokens['--ink'], tokens['--muted']]) {
+      for (const foreground of [tokens['--ink'], tokens['--muted'], tokens['--faint']]) {
         for (const background of [papers[dark ? 1 : 0], ...palette.waves]) {
           const [a, b] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
           assert.ok((a + 0.05) / (b + 0.05) >= 4.5, `${series.id}: ${foreground} on ${background}`);

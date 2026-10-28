@@ -1,13 +1,30 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue';
-import { Check } from 'lucide-vue-next';
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { availableSeries } from '../../shared/series/catalog';
 import { copy, locale } from '../../shared/i18n';
 import type { Preferences, Settings } from '../../shared/ipc/types';
 import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import UpdateSettings from './UpdateSettings.vue';
+import PhraseSettings from './PhraseSettings.vue';
 const props = defineProps<{ settings: Settings; busy: boolean }>();
-const emit = defineEmits<{ save: [Settings]; preference: [Partial<Preferences>] }>();
+const emit = defineEmits<{
+  save: [
+    Partial<Pick<Settings, 'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode'>>,
+  ];
+  preference: [Partial<Preferences>];
+  phrases: [Settings['phrases']];
+  beanRange: [Settings['bean_range']];
+}>();
+const libraryOpen = ref(false);
+const root = ref<HTMLElement | null>(null);
+let settingsScroll = 0;
+async function phrasePage(open: boolean) {
+  const scroll = root.value?.closest('.details-content');
+  if (open && !libraryOpen.value) settingsScroll = scroll?.scrollTop ?? 0;
+  libraryOpen.value = open;
+  await nextTick();
+  if (scroll) scroll.scrollTop = open ? 0 : settingsScroll;
+}
 const form = reactive({
   focus_minutes: props.settings.focus_minutes,
   break_minutes: props.settings.break_minutes,
@@ -25,6 +42,28 @@ watch(
     if (form.focus_mode === previous.focus_mode) form.focus_mode = next.focus_mode;
   },
 );
+let durationTimer: ReturnType<typeof setTimeout> | undefined;
+function saveDurations() {
+  clearTimeout(durationTimer);
+  const changes: Partial<Pick<Settings, 'focus_minutes' | 'break_minutes'>> = {};
+  for (const key of ['focus_minutes', 'break_minutes'] as const) {
+    const value = form[key];
+    if (
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= 1 &&
+      value <= (key === 'focus_minutes' ? 240 : 120) &&
+      value !== props.settings[key]
+    )
+      changes[key] = value;
+  }
+  if (Object.keys(changes).length) emit('save', changes);
+}
+function scheduleDuration() {
+  clearTimeout(durationTimer);
+  durationTimer = setTimeout(saveDurations, 700);
+}
+onBeforeUnmount(saveDurations);
 function choosePreference(key: keyof Preferences, value: string) {
   if (key === 'locale') emit('preference', { locale: value as Preferences['locale'] });
   else if (key === 'appearance')
@@ -33,10 +72,9 @@ function choosePreference(key: keyof Preferences, value: string) {
 }
 </script>
 <template>
-  <section class="mx-auto max-w-[580px] pb-2 pt-4">
-    <h1 class="text-xl font-semibold tracking-tight">{{ copy.settingsTitle }}</h1>
-    <form @submit.prevent="emit('save', { ...settings, ...form })">
-      <section class="mt-4" :aria-label="copy.timerSettings">
+  <section ref="root" class="mx-auto max-w-[580px] pb-2 pt-4">
+    <form v-show="!libraryOpen" @submit.prevent="saveDurations">
+      <section :aria-label="copy.timerSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.timerSettings }}</h2>
         <div class="grid auto-rows-fr rounded-xl border border-line bg-surface">
           <label class="flex min-h-[52px] items-center justify-between gap-4 px-3.5 py-1.5">
@@ -49,6 +87,9 @@ function choosePreference(key: keyof Preferences, value: string) {
             <span class="flex shrink-0 items-center gap-2 text-xs text-muted">
               <input
                 v-model.number="form.focus_minutes"
+                @input="scheduleDuration"
+                @blur="saveDurations"
+                @change="saveDurations"
                 :aria-label="copy.focusDuration"
                 aria-describedby="focus-duration-hint"
                 class="h-7 w-16 rounded-md border border-line bg-paper px-2 text-xs tabular-nums"
@@ -72,6 +113,9 @@ function choosePreference(key: keyof Preferences, value: string) {
             <span class="flex shrink-0 items-center gap-2 text-xs text-muted">
               <input
                 v-model.number="form.break_minutes"
+                @input="scheduleDuration"
+                @blur="saveDurations"
+                @change="saveDurations"
                 :aria-label="copy.breakDuration"
                 aria-describedby="break-duration-hint"
                 class="h-7 w-16 rounded-md border border-line bg-paper px-2 text-xs tabular-nums"
@@ -101,7 +145,7 @@ function choosePreference(key: keyof Preferences, value: string) {
                 { value: 'manual', label: copy.manualFocus },
                 { value: 'timed', label: copy.timedFocus },
               ]"
-              @update:model-value="form.focus_mode = $event as Settings['focus_mode']"
+              @update:model-value="emit('save', { focus_mode: $event as Settings['focus_mode'] })"
               :disabled="busy"
             />
           </div>
@@ -117,7 +161,10 @@ function choosePreference(key: keyof Preferences, value: string) {
             <span class="relative flex h-5 w-9 shrink-0">
               <input
                 id="notifications"
-                v-model="form.notifications"
+                :checked="settings.notifications"
+                @change="
+                  emit('save', { notifications: ($event.target as HTMLInputElement).checked })
+                "
                 class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-ink"
                 type="checkbox"
                 role="switch"
@@ -142,6 +189,7 @@ function choosePreference(key: keyof Preferences, value: string) {
               :label="copy.language"
               :options="[
                 { value: 'zh-CN', label: '简体中文' },
+                { value: 'zh-TW', label: '繁體中文' },
                 { value: 'en-US', label: 'English' },
                 { value: 'ja-JP', label: '日本語' },
               ]"
@@ -169,6 +217,22 @@ function choosePreference(key: keyof Preferences, value: string) {
           <div
             class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
           >
+            <label for="bean-range" class="text-xs">{{ copy.beanRange }}</label
+            ><SettingsSelect
+              id="bean-range"
+              :model-value="settings.bean_range ?? 'day'"
+              :label="copy.beanRange"
+              :options="[
+                { value: 'day', label: copy.beanDay },
+                { value: 'week', label: copy.thisWeek },
+              ]"
+              :disabled="busy"
+              @update:model-value="emit('beanRange', $event as Settings['bean_range'])"
+            />
+          </div>
+          <div
+            class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
+          >
             <label for="visual-series" class="text-xs">{{ copy.visualSeries }}</label>
             <SettingsSelect
               id="visual-series"
@@ -186,12 +250,13 @@ function choosePreference(key: keyof Preferences, value: string) {
           </div>
         </div>
       </section>
-      <div class="flex justify-end pb-2 pt-6">
-        <button class="button primary compact" type="submit" :disabled="busy">
-          <Check :size="14" />{{ copy.saveSettings }}
-        </button>
-      </div>
     </form>
-    <UpdateSettings />
+    <PhraseSettings
+      :settings="settings.phrases"
+      :busy="busy"
+      @save="emit('phrases', $event)"
+      @page="phrasePage"
+    />
+    <UpdateSettings v-show="!libraryOpen" />
   </section>
 </template>

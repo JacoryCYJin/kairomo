@@ -11,6 +11,16 @@ pub(super) struct Text {
 }
 pub(super) fn text(locale: &str) -> Text {
     match locale {
+        "zh-TW" => Text {
+            open: "開啟 {app}",
+            pause_resume: "暫停／繼續",
+            quit: "結束 {app}",
+            focus: "專注",
+            rest: "休息",
+            focus_done: "本次專注已完成，準備好後即可開始休息。",
+            focus_target: "已達到專注目標，仍在繼續計時。準備好後再休息。",
+            break_done: "休息已結束，準備好後即可開始下一次專注。",
+        },
         "ja-JP" => Text {
             open: "{app}を開く",
             pause_resume: "一時停止／再開",
@@ -50,6 +60,7 @@ mod tests {
     fn system_text_covers_each_supported_language_and_stage() {
         for (locale, focus, rest, open) in [
             ("zh-CN", "专注", "休息", "打开 Kairomo"),
+            ("zh-TW", "專注", "休息", "開啟 Kairomo"),
             ("en-US", "Focus", "Break", "Open Kairomo"),
             ("ja-JP", "集中", "休憩", "Kairomoを開く"),
         ] {

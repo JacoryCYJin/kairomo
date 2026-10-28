@@ -11,6 +11,8 @@ const count = ref(Number(query.get('count') || 20));
 const view = ref(query.has('gallery') ? 'gallery' : query.get('panel') || 'collection');
 const dark = ref(query.get('theme') === 'dark');
 const settings = ref<Settings>({
+  phrases: { enabled: false, mode: 'fixed', entries: [], selected_id: null },
+  bean_range: 'day',
   focus_minutes: 50,
   break_minutes: 10,
   locale: 'zh-CN',
@@ -95,8 +97,10 @@ const caption = computed(() =>
         v-else
         :settings="settings"
         :busy="false"
-        @save="settings = $event"
+        @save="settings = { ...settings, ...$event }"
         @preference="settings = { ...settings, ...$event }"
+        @phrases="settings = { ...settings, phrases: $event }"
+        @bean-range="settings = { ...settings, bean_range: $event }"
       />
     </div>
   </main>

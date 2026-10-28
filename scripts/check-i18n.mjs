@@ -8,9 +8,9 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const translations = {};
 new Function('require', 'exports', compiled)(createRequire(import.meta.url), translations);
-const { locale, copy, formatBeanCount, localDate } = translations;
+const { locale, copy, formatBeanCount, localDate, duration } = translations;
 let expectedKeys;
-for (const language of ['zh-CN', 'en-US', 'ja-JP']) {
+for (const language of ['zh-CN', 'zh-TW', 'en-US', 'ja-JP']) {
   locale.value = language;
   const keys = Object.keys(copy.value).sort();
   if (expectedKeys) assert.deepEqual(keys, expectedKeys, `${language}: missing translations`);
@@ -23,9 +23,13 @@ locale.value = 'en-US';
 assert.equal(formatBeanCount(1), '1 coffee bean');
 assert.equal(formatBeanCount(2), '2 coffee beans');
 assert.equal(formatBeanCount(0), '0 coffee beans');
+locale.value = 'zh-TW';
+assert.equal(formatBeanCount(2), '2 顆咖啡豆');
+assert.equal(duration(3_600_000), '1小時 0分');
+assert.match(localDate(new Date(2026, 9, 28, 12).getTime()), /10月28日/);
 locale.value = 'ja-JP';
 assert.equal(formatBeanCount(2), 'コーヒー豆2粒');
 assert.match(localDate(new Date(2026, 9, 28, 12).getTime()), /10月28日/);
 console.log(
-  `Localization: ${expectedKeys.length} entries in each of 3 languages; counts and dates passed.`,
+  `Localization: ${expectedKeys.length} entries in each of 4 languages; counts and dates passed.`,
 );

@@ -27,9 +27,20 @@ pub enum Appearance {
 fn default_visual_series() -> String {
     "coffee".into()
 }
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BeanRange {
+    #[default]
+    Day,
+    Week,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub bean_range: BeanRange,
+    #[serde(default)]
+    pub phrases: crate::Phrases,
     pub focus_minutes: u32,
     pub break_minutes: u32,
     pub locale: String,
@@ -44,6 +55,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            phrases: crate::Phrases::default(),
+            bean_range: BeanRange::default(),
             focus_minutes: 50,
             break_minutes: 10,
             locale: "zh-CN".into(),
@@ -64,10 +77,13 @@ pub enum FocusMode {
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), TimerError> {
+        if !self.phrases.valid() {
+            return Err(TimerError::InvalidPhrases);
+        }
         if !(1..=240).contains(&self.focus_minutes) || !(1..=120).contains(&self.break_minutes) {
             return Err(TimerError::InvalidDuration);
         }
-        if !["zh-CN", "en-US", "ja-JP"].contains(&self.locale.as_str()) {
+        if !["zh-CN", "zh-TW", "en-US", "ja-JP"].contains(&self.locale.as_str()) {
             return Err(TimerError::InvalidLocale);
         }
         if self.visual_series != "coffee" {
@@ -111,6 +127,11 @@ impl Session {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
+    /// Internal visual seed; persisted independently of editable preferences.
+    #[serde(default)]
+    pub bean_random_seed: Option<String>,
+    #[serde(default)]
+    pub phrase_selection: Option<crate::PhraseSelection>,
     #[serde(default)]
     pub revision: u64,
     pub phase: Phase,
@@ -124,6 +145,8 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            bean_random_seed: None,
+            phrase_selection: None,
             revision: 0,
             phase: Phase::Idle,
             current: None,
@@ -138,6 +161,8 @@ impl Default for Snapshot {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimerError {
+    #[error("invalid_phrases")]
+    InvalidPhrases,
     #[error("invalid_transition")]
     InvalidTransition,
     #[error("invalid_duration")]
@@ -148,4 +173,26 @@ pub enum TimerError {
     InvalidLocale,
     #[error("title_too_long")]
     TitleTooLong,
+}
+
+#[cfg(test)]
+mod bean_range_tests {
+    use super::*;
+    #[test]
+    fn only_day_and_week_are_accepted_and_legacy_settings_default_to_day() {
+        assert_eq!(
+            serde_json::from_str::<BeanRange>("\"day\"").unwrap(),
+            BeanRange::Day
+        );
+        assert_eq!(
+            serde_json::from_str::<BeanRange>("\"week\"").unwrap(),
+            BeanRange::Week
+        );
+        assert!(serde_json::from_str::<BeanRange>("\"month\"").is_err());
+        let settings: Settings = serde_json::from_str(
+            r#"{"focus_minutes":50,"break_minutes":10,"locale":"zh-CN","notifications":true}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.bean_range, BeanRange::Day);
+    }
 }

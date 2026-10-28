@@ -25,7 +25,8 @@ await copyFile(
 const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
-  notes: '完善专注与休息切换、休息波浪、记录筛选及连续加载；修正菜单栏排版、窗口对齐与咖啡豆堆叠。',
+  notes:
+    '新增繁体中文、自定义短句库与作者作品署名；支持当天／本周物理豆堆，优化小窗首次显示、设置自动保存及菜单栏状态。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

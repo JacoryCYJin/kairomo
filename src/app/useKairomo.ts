@@ -1,12 +1,17 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { api, desktop } from '../shared/ipc/client';
 import type { Action, Preferences, Session, Settings, Snapshot } from '../shared/ipc/types';
+import { emptyPhrases } from '../shared/ipc/types';
 import { copy, locale } from '../shared/i18n';
+import { settingWriter } from '../features/settings/settingWriter';
 const defaults: Snapshot = {
+  bean_random_seed: null,
   revision: 0,
   phase: 'idle',
   current: null,
   settings: {
+    bean_range: 'day',
+    phrases: emptyPhrases(),
     focus_minutes: 50,
     break_minutes: 10,
     locale: 'zh-CN',
@@ -27,7 +32,14 @@ export function useKairomo() {
     busy = ref(false),
     error = ref(''),
     notice = ref('');
-  const saved = ref(0);
+  const writeSetting = settingWriter<Snapshot>(apply, () => {
+    error.value = copy.value.error;
+  });
+  function saveSetting(operation: () => Promise<Snapshot>) {
+    if (!ready.value) return Promise.resolve();
+    error.value = '';
+    return writeSetting(operation);
+  }
   const unlisten: (() => void)[] = [];
   let disposed = false;
   function apply(s: Snapshot) {
@@ -83,16 +95,18 @@ export function useKairomo() {
     });
     return cancelled;
   }
-  async function configure(settings: Settings) {
-    await operate(async () => {
-      apply(await api.settings(settings));
-      saved.value += 1;
+  function configure(
+    settings: Partial<
+      Pick<Settings, 'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode'>
+    >,
+  ) {
+    return saveSetting(async () => {
+      const latest = await api.snapshot();
+      return api.settings({ ...latest.settings, ...settings });
     });
   }
-  async function preferences(preferences: Partial<Preferences>) {
-    await operate(async () => {
-      apply(await api.preferences(preferences));
-    });
+  function preferences(preferences: Partial<Preferences>) {
+    return saveSetting(() => api.preferences(preferences));
   }
   async function remove(id: string) {
     await operate(async () => {
@@ -183,12 +197,13 @@ export function useKairomo() {
     busy,
     error,
     notice,
-    saved,
     connect,
     act,
     cancelSession,
     configure,
     preferences,
+    beanRange: (range: Settings['bean_range']) => saveSetting(() => api.beanRange(range)),
+    phrases: (phrases: Settings['phrases']) => saveSetting(() => api.phrases(phrases)),
     remove,
     correct,
     exportRecords,

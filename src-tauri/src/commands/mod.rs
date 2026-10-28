@@ -1,5 +1,5 @@
 use crate::runtime::AppState;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use timer_core::{Phase, Repository, Session, Settings, Snapshot};
 #[tauri::command]
 pub async fn sync_window_appearance(
@@ -79,6 +79,34 @@ pub fn save_settings(
     Ok(snapshot)
 }
 #[tauri::command]
+pub fn save_bean_range(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    range: timer_core::BeanRange,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .bean_range(range)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
+pub fn save_phrases(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    phrases: timer_core::Phrases,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .phrases(phrases)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
 pub fn save_preferences(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -138,4 +166,24 @@ pub fn hide_popup(app: tauri::AppHandle) {
 #[tauri::command]
 pub fn details_view() -> String {
     crate::platform::windows::details_view()
+}
+
+/// Only the timer can select a known fixed layout; no general window-control capability is exposed.
+#[tauri::command]
+pub fn resize_popup(window: tauri::WebviewWindow, height: u32) -> Result<(), String> {
+    if window.label() != "main" || !matches!(height, 284 | 302 | 320) {
+        return Err("invalid_timer_layout".into());
+    }
+    window
+        .set_size(tauri::LogicalSize::new(360.0, f64::from(height)))
+        .map_err(|error| error.to_string())
+}
+
+/// The details webview cannot release the timer's startup gate.
+#[tauri::command]
+pub fn popup_prepared(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("invalid_timer_window".into());
+    }
+    crate::platform::windows::prepared(window.app_handle())
 }

@@ -18,6 +18,5 @@ export interface RestVisual {
 export interface SeriesDefinition {
   readonly id: SeriesId;
   readonly name: SeriesName;
-  readonly summary: { readonly limit: number; readonly replace: 'shortest' };
   readonly rest: RestVisual;
 }

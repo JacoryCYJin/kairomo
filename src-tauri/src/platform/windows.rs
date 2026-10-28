@@ -60,6 +60,11 @@ pub fn hide(app: &tauri::AppHandle) {
     dispatch(app, hide_on_main);
 }
 fn hide_on_main(app: &tauri::AppHandle) -> Result<(), String> {
+    app.state::<super::popup_startup::PopupStartup>()
+        .0
+        .lock()
+        .map_err(|_| "window_unavailable")?
+        .cancel();
     #[cfg(target_os = "macos")]
     super::macos::hide_popup(app)?;
     #[cfg(not(target_os = "macos"))]
@@ -92,6 +97,16 @@ pub fn show(app: &tauri::AppHandle) {
     dispatch(app, show_on_main);
 }
 fn show_on_main(app: &tauri::AppHandle) -> Result<(), String> {
+    let ready = app
+        .state::<super::popup_startup::PopupStartup>()
+        .0
+        .lock()
+        .map_err(|_| "window_unavailable")?
+        .request();
+    if !ready {
+        trace(app, "first open queued: waiting for complete timer frame");
+        return Ok(());
+    }
     let window = app.get_webview_window("main").ok_or("window_unavailable")?;
     #[cfg(target_os = "macos")]
     super::macos::ensure_popup_visible(app, &window)?;
@@ -142,6 +157,19 @@ fn show_on_main(app: &tauri::AppHandle) -> Result<(), String> {
         app,
         "shown; neutral focus requested; remains visible when focus changes",
     );
+    Ok(())
+}
+pub fn prepared(app: &tauri::AppHandle) -> Result<(), String> {
+    let requested = app
+        .state::<super::popup_startup::PopupStartup>()
+        .0
+        .lock()
+        .map_err(|_| "window_unavailable")?
+        .prepared();
+    trace(app, "initial timer frame prepared");
+    if requested {
+        show(app);
+    }
     Ok(())
 }
 pub fn open_details(app: &tauri::AppHandle, view: &str) -> Result<(), String> {
