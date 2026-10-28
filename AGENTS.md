@@ -2,7 +2,7 @@
 
 ## 产品与范围
 
-Kairomo 是本地优先的时间与任务管理桌面工具，首版 macOS，预留 Windows。目标时长只是提醒，不自动终止专注。界面维护 zh-CN / en-US / ja-JP，不复制 site 的视觉与业务代码。
+Kairomo 是本地优先的时间与任务管理桌面工具，首版 macOS，预留 Windows。目标时长只是提醒，不自动终止专注。界面维护 zh-CN / zh-TW / en-US / ja-JP，不复制 site 的视觉与业务代码。
 
 ## 架构边界
 

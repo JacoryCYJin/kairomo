@@ -2,9 +2,9 @@
 #import <CoreText/CoreText.h>
 #import <objc/runtime.h>
 
-static const CGFloat kairomoTrayPadding = 2;
-static const CGFloat kairomoTrayIconWidth = 16;
-static const CGFloat kairomoTrayGap = 2;
+static const CGFloat kairomoTrayPadding = 5;
+static const CGFloat kairomoTrayIconWidth = 15;
+static const CGFloat kairomoTrayGap = 3;
 
 // Remove transparent padding without changing the mark's original 18pt scale.
 // The resulting image's bounds describe the visible shape, not its PNG canvas.
@@ -54,56 +54,79 @@ static CGFloat kairomo_tray_width(BOOL hours) {
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
+    BOOL dark = [[self.effectiveAppearance bestMatchFromAppearancesWithNames:
+        @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
     NSColor *color = NSColor.labelColor;
-    NSStatusBarButton *button = (NSStatusBarButton *)self.superview;
-    if (button.highlighted) color = NSColor.selectedMenuItemTextColor;
+    NSColor *background = nil;
+    if (self.style == 1) {
+        background = [NSColor colorWithSRGBRed:67.0/255 green:41.0/255 blue:28.0/255 alpha:1];
+        color = [NSColor colorWithSRGBRed:1 green:229.0/255 blue:201.0/255 alpha:1];
+    } else if (self.style == 2) {
+        background = dark
+            ? [NSColor colorWithSRGBRed:69.0/255 green:55.0/255 blue:43.0/255 alpha:1]
+            : [NSColor colorWithSRGBRed:243.0/255 green:231.0/255 blue:217.0/255 alpha:1];
+        color = dark
+            ? [NSColor colorWithSRGBRed:235.0/255 green:195.0/255 blue:152.0/255 alpha:1]
+            : [NSColor colorWithSRGBRed:118.0/255 green:81.0/255 blue:53.0/255 alpha:1];
+    }
     CGFloat centerY = NSMidY(self.bounds);
-    CGFloat centerX = kairomoTrayPadding + kairomoTrayIconWidth / 2;
-    if (self.style == 2) {
-        NSBezierPath *plus = [NSBezierPath bezierPath];
-        plus.lineWidth = 1.5;
-        plus.lineCapStyle = NSLineCapStyleRound;
-        [plus moveToPoint:NSMakePoint(centerX - 5, centerY)];
-        [plus lineToPoint:NSMakePoint(centerX + 5, centerY)];
-        [plus moveToPoint:NSMakePoint(centerX, centerY - 5)];
-        [plus lineToPoint:NSMakePoint(centerX, centerY + 5)];
-        [color setStroke];
-        [plus stroke];
-    } else {
-        NSImage *icon = self.style == 1 ? self.restIcon : self.focusIcon;
-        // Tint the focus mark inside its own image so compositing cannot affect
-        // the transparent menu-bar background. Keep the rest icon's amber.
-        if (self.style == 0) {
-            NSImage *source = icon;
-            icon = [NSImage imageWithSize:source.size flipped:NO
-                drawingHandler:^BOOL(NSRect rect) {
-                    [source drawInRect:rect];
-                    [color setFill];
-                    NSRectFillUsingOperation(rect, NSCompositingOperationSourceAtop);
-                    return YES;
-                }];
-        }
-        [icon drawInRect:NSMakeRect(centerX - icon.size.width / 2,
-                                   centerY - icon.size.height / 2,
-                                   icon.size.width, icon.size.height)];
+    if (background) {
+        // Fill only. No stroke, shadow, or state-dependent layout inset.
+        [background setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(0, centerY - 10, self.bounds.size.width, 20)
+            xRadius:5 yRadius:5] fill];
     }
     NSFont *font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
-    NSDictionary *attributes = @{NSFontAttributeName:font,
-        NSForegroundColorAttributeName:color};
+    NSDictionary *attributes = @{NSFontAttributeName:font, NSForegroundColorAttributeName:color};
     NSAttributedString *reference = [[NSAttributedString alloc] initWithString:@"00:00" attributes:attributes];
     CTLineRef referenceLine = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)reference);
     CGRect digitBounds = CTLineGetImageBounds(referenceLine, NULL);
     CFRelease(referenceLine);
+    // These anchors depend only on the format, never the current glyphs or state.
+    CGFloat timeX = kairomoTrayPadding + kairomoTrayIconWidth + kairomoTrayGap;
+    CGFloat iconRight = kairomoTrayPadding + kairomoTrayIconWidth;
+    if (self.style == 2) {
+        NSFont *sampleFont = [NSFont systemFontOfSize:25 weight:NSFontWeightRegular];
+        NSAttributedString *sample = [[NSAttributedString alloc] initWithString:@"+"
+            attributes:@{NSFontAttributeName:sampleFont}];
+        CTLineRef sampleLine = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)sample);
+        CGRect sampleBounds = CTLineGetImageBounds(sampleLine, NULL);
+        CFRelease(sampleLine);
+        NSFont *plusFont = [NSFont systemFontOfSize:25 * 9 / sampleBounds.size.height weight:NSFontWeightRegular];
+        NSAttributedString *plus = [[NSAttributedString alloc] initWithString:@"+"
+            attributes:@{NSFontAttributeName:plusFont, NSForegroundColorAttributeName:color}];
+        CTLineRef plusLine = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)plus);
+        CGRect bounds = CTLineGetImageBounds(plusLine, NULL);
+        CGContextRef context = NSGraphicsContext.currentContext.CGContext;
+        CGContextSaveGState(context);
+        CGContextSetTextMatrix(context, CGAffineTransformIdentity);
+        CGContextSetTextPosition(context, iconRight - CGRectGetMaxX(bounds), centerY - CGRectGetMidY(bounds));
+        CTLineDraw(plusLine, context);
+        CGContextRestoreGState(context);
+        CFRelease(plusLine);
+    } else {
+        NSImage *icon = self.style == 1 ? self.restIcon : self.focusIcon;
+        if (self.style == 0) {
+            NSImage *source = icon;
+            icon = [NSImage imageWithSize:source.size flipped:NO drawingHandler:^BOOL(NSRect rect) {
+                [source drawInRect:rect];
+                [color setFill];
+                NSRectFillUsingOperation(rect, NSCompositingOperationSourceAtop);
+                return YES;
+            }];
+        }
+        // Original marks keep their scale. Their visible right edge shares a
+        // fixed anchor so a smaller plus cannot create a larger internal gap.
+        [icon drawInRect:NSMakeRect(iconRight - icon.size.width,
+            centerY - icon.size.height / 2, icon.size.width, icon.size.height)];
+    }
     NSAttributedString *text = [[NSAttributedString alloc] initWithString:self.time attributes:attributes];
     CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)text);
     CGContextRef context = NSGraphicsContext.currentContext.CGContext;
     CGContextSaveGState(context);
     CGContextSetTextMatrix(context, CGAffineTransformIdentity);
-    // Anchor to a stable reference digit outline, excluding invisible line
-    // leading and descenders. Changing seconds cannot change the baseline.
-    CGContextSetTextPosition(context,
-        self.bounds.size.width - kairomoTrayPadding - CTLineGetTypographicBounds(line, NULL, NULL, NULL),
-        centerY - CGRectGetMidY(digitBounds));
+    CGContextSetTextPosition(context, timeX - CGRectGetMinX(digitBounds), centerY - CGRectGetMidY(digitBounds));
     CTLineDraw(line, context);
     CGContextRestoreGState(context);
     CFRelease(line);

@@ -2,14 +2,15 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ChartNoAxesColumnIncreasing, SlidersHorizontal, X } from 'lucide-vue-next';
 import TimerView from '../features/timer/TimerView.vue';
+import { timerLayout } from '../features/timer/timerLayout';
 import HistoryView from '../features/history/HistoryView.vue';
 import SettingsView from '../features/settings/SettingsView.vue';
-import StatusToast from '../shared/ui/StatusToast.vue';
 import { copy } from '../shared/i18n';
 import { api, desktop } from '../shared/ipc/client';
 import { syncAppearance } from '../shared/ipc/appearance';
 import { startWindowDrag, windowTitle } from '../shared/ipc/window';
 import { useKairomo } from './useKairomo';
+import { popupStartup } from './popupStartup';
 import { updates } from '../shared/ipc/updates';
 import { restThemeStyle } from '../shared/series/rest';
 const auxiliary = new URLSearchParams(window.location.search).has('view');
@@ -17,8 +18,28 @@ const view = ref<'history' | 'settings'>('settings');
 const shell = ref<HTMLElement | null>(null);
 const title = ref('Kairomo');
 const development = ref(false);
+const identityReady = ref(!desktop || auxiliary);
+const startupReleased = ref(!desktop || auxiliary);
+const beansPrepared = ref(false);
+const beansFailed = ref(false);
 const k = useKairomo();
-const { state, records, ready, busy, error, notice, saved } = k;
+const { state, records, ready, busy, error, notice } = k;
+const popupHeight = computed(() => timerLayout(state.value).height);
+let pendingResize = Promise.resolve();
+function syncPopupSize() {
+  if (auxiliary || !desktop || !ready.value) return;
+  const height = popupHeight.value;
+  pendingResize = pendingResize
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await api.resizePopup(height);
+      } catch {
+        error.value = copy.value.timerLayoutError;
+      }
+    });
+}
+watch([ready, popupHeight], syncPopupSize);
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(media.matches);
 const dark = computed(
@@ -38,15 +59,60 @@ watch(
   },
   { immediate: true },
 );
-watch([ready, () => state.value.settings.appearance, dark], () => {
+let pendingAppearance = Promise.resolve();
+watch([ready, () => state.value.settings.appearance, dark, resting, visualSeries], () => {
   if (ready.value)
-    void syncAppearance(
+    pendingAppearance = syncAppearance(
       state.value.settings.appearance,
       getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
     ).catch(() => {
       error.value = copy.value.appearanceError;
     });
 });
+
+const startup = popupStartup(
+  async () => {
+    await pendingResize;
+    await pendingAppearance;
+    await nextTick();
+  },
+  () => api.popupPrepared(),
+  () => {
+    startupReleased.value = true;
+  },
+  () => {
+    error.value = copy.value.windowError;
+  },
+);
+function pileFailed() {
+  beansFailed.value = true;
+  error.value = copy.value.error;
+}
+watch(
+  [
+    ready,
+    beansPrepared,
+    beansFailed,
+    resting,
+    identityReady,
+    popupHeight,
+    dark,
+    () => state.value.settings.appearance,
+    error,
+  ],
+  () => {
+    if (auxiliary || !desktop || startupReleased.value) return;
+    // A failed load displays its error and retry control, rather than trapping a hidden window.
+    const prepared =
+      !!error.value ||
+      (ready.value &&
+        identityReady.value &&
+        (resting.value || beansPrepared.value || beansFailed.value));
+    void startup.update(prepared);
+  },
+  { flush: 'post' },
+);
+
 let disposed = false;
 let unlisten: (() => void) | undefined;
 function resetTimerFocus() {
@@ -107,7 +173,10 @@ onMounted(async () => {
   if (auxiliary) document.documentElement.classList.add('details-window');
   if (!auxiliary && desktop) {
     const info = await updates.info().catch(() => null);
-    if (!disposed) development.value = info?.channel === 'dev';
+    if (!disposed) {
+      development.value = info?.channel === 'dev';
+      identityReady.value = true;
+    }
   }
   if (auxiliary && desktop) title.value = await windowTitle().catch(() => 'Kairomo');
   applyTheme();
@@ -115,7 +184,10 @@ onMounted(async () => {
   window.addEventListener('keydown', hide);
   resetTimerFocus();
   if (!auxiliary && desktop) {
-    const stop = await api.onTimerOpened(resetTimerFocus);
+    const stop = await api.onTimerOpened(() => {
+      resetTimerFocus();
+      syncPopupSize();
+    });
     if (disposed) stop();
     else unlisten = stop;
     resetTimerFocus();
@@ -133,6 +205,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (auxiliary) document.documentElement.classList.remove('details-window');
   disposed = true;
+  startup.dispose();
   unlisten?.();
   media.removeEventListener('change', applyTheme);
   window.removeEventListener('keydown', hide);
@@ -236,10 +309,12 @@ onUnmounted(() => {
         <X :size="14" />
       </button>
     </div>
-    <StatusToast v-if="auxiliary" :trigger="saved" :message="copy.saved" />
     <TimerView
       v-if="!auxiliary"
       :state="state"
+      :warming-up="!startupReleased"
+      @prepared="beansPrepared = $event"
+      @pile-failed="pileFailed"
       :dark="dark"
       :records="records"
       :cancel-session="k.cancelSession"
@@ -268,6 +343,8 @@ onUnmounted(() => {
           :busy="busy || !ready"
           @save="k.configure"
           @preference="k.preferences"
+          @phrases="k.phrases"
+          @bean-range="k.beanRange"
         />
       </div>
     </div>

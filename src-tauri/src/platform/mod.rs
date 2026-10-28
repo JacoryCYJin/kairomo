@@ -9,6 +9,7 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 use timer_core::{Kind, Phase, Snapshot, TargetReached};
+pub mod popup_startup;
 pub mod windows;
 struct TrayMenu {
     open: MenuItem<tauri::Wry>,

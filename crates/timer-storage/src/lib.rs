@@ -223,6 +223,12 @@ mod tests {
             )
             .unwrap();
         let mut legacy = serde_json::to_value(&engine.state).unwrap();
+        legacy.as_object_mut().unwrap().remove("bean_random_seed");
+        legacy.as_object_mut().unwrap().remove("phrase_selection");
+        legacy["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("phrases");
         legacy["settings"]
             .as_object_mut()
             .unwrap()
@@ -240,12 +246,15 @@ mod tests {
         let state = repo.load_checkpoint().unwrap().unwrap();
         assert_eq!(state.settings.appearance, timer_core::Appearance::System);
         assert_eq!(state.settings.visual_series, "coffee");
+        assert_eq!(state.settings.phrases, timer_core::Phrases::default());
+        assert!(state.phrase_selection.is_none());
+        assert!(state.bean_random_seed.is_none());
         assert_eq!(repo.sessions().unwrap()[0].id, record.id);
     }
     #[test]
     fn language_and_all_appearance_modes_survive_reopen() {
         let mut repo = db();
-        for locale in ["zh-CN", "en-US", "ja-JP"] {
+        for locale in ["zh-CN", "zh-TW", "en-US", "ja-JP"] {
             for appearance in [
                 timer_core::Appearance::System,
                 timer_core::Appearance::Light,

@@ -22,6 +22,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_notification::init())
         .manage(updates::Updates::default())
+        .manage(platform::popup_startup::PopupStartup::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -55,6 +56,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if window.label() == "main" {
+                if let tauri::WindowEvent::Resized(size) = event {
+                    platform::windows::trace(window.app_handle(), &format!("resized {size:?}"));
+                }
                 if let tauri::WindowEvent::Moved(position) = event {
                     platform::windows::trace(window.app_handle(), &format!("moved {position:?}"));
                 }
@@ -75,12 +79,16 @@ pub fn run() {
             commands::details_view,
             commands::open_details,
             commands::hide_popup,
+            commands::resize_popup,
+            commands::popup_prepared,
             commands::snapshot,
             commands::timer_action,
             commands::cancel_session,
             commands::sessions,
             commands::save_settings,
             commands::save_preferences,
+            commands::save_phrases,
+            commands::save_bean_range,
             commands::sync_window_appearance,
             commands::delete_session,
             commands::correct_session,

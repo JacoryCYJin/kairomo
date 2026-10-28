@@ -27,12 +27,20 @@ impl Runtime {
     pub fn open(path: &Path) -> Result<Self, String> {
         let mut repository = SqliteRepository::open(path).map_err(|e| e.to_string())?;
         let checkpoint = repository.load_checkpoint().map_err(|e| e.to_string())?;
-        let engine = checkpoint.map(Engine::restore).unwrap_or_default();
+        let mut engine = checkpoint.map(Engine::restore).unwrap_or_default();
         engine
             .state
             .settings
             .validate()
             .map_err(|e| e.to_string())?;
+        if engine
+            .state
+            .bean_random_seed
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            engine.state.bean_random_seed = Some(Uuid::new_v4().to_string());
+        }
         repository
             .persist(&engine.state, &[])
             .map_err(|e| e.to_string())?;
@@ -52,6 +60,26 @@ impl Runtime {
         measured: Instant,
     ) -> Result<Snapshot, String> {
         engine.state.revision = self.engine.state.revision.saturating_add(1);
+        if let Some(session) = engine
+            .state
+            .current
+            .as_ref()
+            .filter(|s| s.kind == timer_core::Kind::Focus && !s.intervals.is_empty())
+        {
+            let selected = &engine.state.phrase_selection;
+            if selected
+                .as_ref()
+                .is_none_or(|selection| selection.session_id != session.id)
+            {
+                let previous = selected
+                    .as_ref()
+                    .and_then(|selection| selection.entry_id.as_deref());
+                engine.state.phrase_selection = Some(timer_core::PhraseSelection {
+                    session_id: session.id.clone(),
+                    entry_id: engine.state.settings.phrases.pick(&session.id, previous),
+                });
+            }
+        }
         self.repository
             .persist(&engine.state, done)
             .map_err(|e| e.to_string())?;
@@ -204,6 +232,16 @@ impl Runtime {
         if let Some(visual_series) = visual_series {
             settings.visual_series = visual_series;
         }
+        self.configure(settings)
+    }
+    pub fn phrases(&mut self, phrases: timer_core::Phrases) -> Result<Snapshot, String> {
+        let mut settings = self.engine.state.settings.clone();
+        settings.phrases = phrases;
+        self.configure(settings)
+    }
+    pub fn bean_range(&mut self, range: timer_core::BeanRange) -> Result<Snapshot, String> {
+        let mut settings = self.engine.state.settings.clone();
+        settings.bean_range = range;
         self.configure(settings)
     }
     pub fn correct(&mut self, id: &str, title: &str, minutes: f64) -> Result<(), String> {
@@ -628,17 +666,172 @@ mod tests {
         });
     }
     #[test]
-    fn japanese_preferences_survive_reopen_and_keep_active_session() {
+    fn added_languages_survive_reopen_and_keep_active_session() {
+        for locale in ["ja-JP", "zh-TW"] {
+            with_runtime(|rt, path| {
+                rt.action("start", "読む").unwrap();
+                let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+                rt.preferences(Some(locale.into()), None, None).unwrap();
+                assert_eq!(rt.engine.state.settings.locale, locale);
+                assert_eq!(rt.engine.state.current.as_ref().unwrap().id, id);
+                let restored = Runtime::open(path).unwrap();
+                assert_eq!(restored.engine.state.settings.locale, locale);
+                assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
+                assert!(rt.preferences(Some("fr-FR".into()), None, None).is_err());
+            });
+        }
+    }
+    #[test]
+    fn bean_range_survives_reopen_without_overwriting_other_preferences_or_session() {
         with_runtime(|rt, path| {
-            rt.action("start", "読む").unwrap();
+            rt.action("start", "Read").unwrap();
             let id = rt.engine.state.current.as_ref().unwrap().id.clone();
-            rt.preferences(Some("ja-JP".into()), None, None).unwrap();
-            assert_eq!(rt.engine.state.settings.locale, "ja-JP");
-            assert_eq!(rt.engine.state.current.as_ref().unwrap().id, id);
+            let settings = rt.engine.state.settings.clone();
+            rt.bean_range(timer_core::BeanRange::Week).unwrap();
             let restored = Runtime::open(path).unwrap();
-            assert_eq!(restored.engine.state.settings.locale, "ja-JP");
+            assert_eq!(
+                restored.engine.state.settings.bean_range,
+                timer_core::BeanRange::Week
+            );
             assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
-            assert!(rt.preferences(Some("fr-FR".into()), None, None).is_err());
+            assert_eq!(restored.engine.state.settings.phrases, settings.phrases);
+            assert_eq!(
+                restored.engine.state.settings.focus_minutes,
+                settings.focus_minutes
+            );
+            assert_eq!(restored.engine.state.settings.locale, settings.locale);
+            assert!(restored.repository.sessions().unwrap().is_empty());
+        });
+    }
+    #[test]
+    fn bean_seed_is_unique_per_database_and_survives_reopen_and_preferences() {
+        with_runtime(|rt, path| {
+            let seed = rt.engine.state.bean_random_seed.clone().unwrap();
+            assert!(Uuid::parse_str(&seed).is_ok());
+            rt.action("start", "Read").unwrap();
+            rt.action("pause", "").unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.bean_range(timer_core::BeanRange::Week).unwrap();
+            rt.preferences(Some("ja-JP".into()), None, None).unwrap();
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(
+                restored.engine.state.bean_random_seed.as_deref(),
+                Some(seed.as_str())
+            );
+            assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
+            assert_eq!(restored.engine.state.settings.locale, "ja-JP");
+            assert_eq!(
+                restored.engine.state.settings.bean_range,
+                timer_core::BeanRange::Week
+            );
+            let other = Runtime::open(&path.with_file_name("other.sqlite3")).unwrap();
+            assert_ne!(
+                other.engine.state.bean_random_seed,
+                restored.engine.state.bean_random_seed
+            );
+        });
+    }
+    #[test]
+    fn legacy_seed_initialization_preserves_existing_records_and_paused_session() {
+        with_runtime(|rt, path| {
+            let mut historical = Engine::default();
+            historical
+                .start("history".into(), "Completed".into(), 1000)
+                .unwrap();
+            historical.advance(60_000, 61_000);
+            let record = historical.finish(61_000).unwrap();
+            rt.action("start", "Current").unwrap();
+            rt.action("pause", "").unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            rt.engine.state.bean_random_seed = None;
+            rt.repository.persist(&rt.engine.state, &[record]).unwrap();
+            let restored = Runtime::open(path).unwrap();
+            let seed = restored.engine.state.bean_random_seed.clone().unwrap();
+            assert!(Uuid::parse_str(&seed).is_ok());
+            assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
+            assert_eq!(restored.engine.state.phase, Phase::Paused);
+            assert_eq!(restored.repository.sessions().unwrap()[0].id, "history");
+            let reopened = Runtime::open(path).unwrap();
+            assert_eq!(
+                reopened.engine.state.bean_random_seed.as_deref(),
+                Some(seed.as_str())
+            );
+            assert_eq!(reopened.repository.sessions().unwrap().len(), 1);
+        });
+    }
+    #[test]
+    fn phrases_survive_pause_break_reopen_and_choose_only_when_focus_starts() {
+        with_runtime(|rt, path| {
+            let phrases = timer_core::Phrases {
+                enabled: true,
+                mode: timer_core::PhraseMode::Random,
+                entries: vec![
+                    timer_core::Phrase {
+                        id: "a".into(),
+                        text: "專注於當下".into(),
+                        author: "作者".into(),
+                        source_title: "作品".into(),
+                        source_kind: Some(timer_core::SourceKind::Book),
+                    },
+                    timer_core::Phrase {
+                        id: "b".into(),
+                        text: "One step at a time".into(),
+                        ..Default::default()
+                    },
+                ],
+                selected_id: Some("a".into()),
+            };
+            let target = rt.engine.state.settings.focus_minutes;
+            rt.phrases(phrases.clone()).unwrap();
+            assert!(rt.engine.state.phrase_selection.is_none());
+            rt.action("start", "Read").unwrap();
+            let selected = rt
+                .engine
+                .state
+                .phrase_selection
+                .as_ref()
+                .unwrap()
+                .entry_id
+                .clone();
+            rt.action("pause", "").unwrap();
+            rt.action("resume", "").unwrap();
+            assert_eq!(
+                rt.engine.state.phrase_selection.as_ref().unwrap().entry_id,
+                selected
+            );
+            rt.action("switch", "").unwrap();
+            rt.action("resume", "").unwrap();
+            assert_eq!(
+                rt.engine.state.phrase_selection.as_ref().unwrap().entry_id,
+                selected
+            );
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(restored.engine.state.settings.phrases, phrases);
+            assert_eq!(
+                restored
+                    .engine
+                    .state
+                    .phrase_selection
+                    .as_ref()
+                    .unwrap()
+                    .entry_id,
+                selected
+            );
+            rt.action("switch", "").unwrap();
+            assert_eq!(
+                rt.engine.state.phrase_selection.as_ref().unwrap().entry_id,
+                selected
+            );
+            rt.action("resume", "").unwrap();
+            assert_ne!(
+                rt.engine.state.phrase_selection.as_ref().unwrap().entry_id,
+                selected
+            );
+            assert_eq!(rt.engine.state.settings.focus_minutes, target);
+            assert!(rt.repository.sessions().unwrap().is_empty());
+            let mut invalid = phrases;
+            invalid.entries[0].text.clear();
+            assert!(rt.phrases(invalid).is_err());
         });
     }
     #[test]

@@ -1,3 +1,4 @@
+import { localWeekStart } from '../../shared/localCalendar.ts';
 import { isCompletedFocus } from '../../shared/completions.ts';
 import type { Session } from '../../shared/ipc/types';
 
@@ -26,9 +27,9 @@ export function parseDateInput(value: string): Date | null {
   return dateInput(date) === value ? date : null;
 }
 export function periodFor(range: HistoryRange, anchor: Date): Period {
-  const start = localDay(anchor);
+  let start = localDay(anchor);
   if (range === 'all') return { start: -Infinity, end: Infinity };
-  if (range === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  if (range === 'week') start = localWeekStart(anchor);
   if (range === 'month') start.setDate(1);
   if (range === 'year') start.setMonth(0, 1);
   const end = new Date(start);

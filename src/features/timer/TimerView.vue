@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Pause, Play, SkipForward, X } from 'lucide-vue-next';
-import CompletionDots from './CompletionDots.vue';
+import PeriodBeans from './PeriodBeans.vue';
+import PhraseDisplay from './PhraseDisplay.vue';
 import CancelSessionDialog from './CancelSessionDialog.vue';
 import CoffeeCupIcon from '../../shared/ui/CoffeeCupIcon.vue';
 import RestBackdrop from './RestBackdrop.vue';
+import { timerLayout } from './timerLayout';
 import { seriesFor } from '../../shared/series/catalog';
 import { remainingRestFraction, restThemeStyle } from '../../shared/series/rest';
 import { clock, copy } from '../../shared/i18n';
@@ -14,10 +16,12 @@ const props = defineProps<{
   busy: boolean;
   records: Session[];
   dark?: boolean;
+  warmingUp?: boolean;
   cancelSession: (id: string) => Promise<boolean>;
 }>();
 const cancellation = ref<InstanceType<typeof CancelSessionDialog> | null>(null);
-const emit = defineEmits<{ action: [Action] }>();
+const emit = defineEmits<{ action: [Action]; prepared: [ready: boolean]; pileFailed: [] }>();
+const layout = computed(() => timerLayout(props.state));
 const current = computed(() => props.state.current);
 const isBreak = computed(() => current.value?.kind === 'break');
 const visualSeries = computed(() => props.state.settings.visual_series);
@@ -58,7 +62,7 @@ const interruption = computed(() =>
 </script>
 <template>
   <section
-    class="relative isolate flex h-full flex-col items-center justify-center px-5 py-8 text-center"
+    class="relative isolate h-full text-center"
     :class="isBreak ? 'bg-paper' : ''"
     :style="restStyle"
   >
@@ -70,22 +74,33 @@ const interruption = computed(() =>
       :visual="restVisual"
     />
     <div
-      class="relative whitespace-nowrap text-timer font-medium tabular-nums"
+      class="absolute inset-x-2.5 top-[43px] z-10 whitespace-nowrap text-timer font-medium !leading-[90px] tabular-nums"
       :class="state.phase === 'paused' && !readyToStart ? 'text-muted' : 'text-ink'"
       aria-live="off"
     >
       <span v-if="over" class="mr-1 align-[9px] text-timer-sign tracking-normal">+</span
       >{{ clock(display) }}
     </div>
-    <div class="mt-2 h-6">
-      <CompletionDots :records="records" :series-id="state.settings.visual_series" />
+    <div v-if="layout.phrase" class="absolute inset-x-[34px] top-[145px] z-10">
+      <PhraseDisplay :state="state" />
     </div>
+    <PeriodBeans
+      :prepare-hidden="warmingUp"
+      @prepared="emit('prepared', $event)"
+      @failed="emit('pileFailed')"
+      :random-seed="state.bean_random_seed"
+      :range="state.settings.bean_range"
+      v-show="!isBreak"
+      :records="records"
+      :series-id="state.settings.visual_series"
+    />
     <div
-      class="group/controls mt-2.5 grid grid-cols-[32px_56px_32px] items-center justify-center gap-7"
+      class="group/controls absolute left-1/2 z-10 grid -translate-x-1/2 grid-cols-[32px_48px_32px] items-center justify-center gap-7"
+      :style="{ top: `${layout.controlsTop}px` }"
     >
       <button
         v-if="hasStarted && !isBreak"
-        class="icon-button pointer-events-none col-start-1 row-start-1 !size-8 translate-x-[72px] opacity-0 transition-[transform,opacity] duration-200 ease-out disabled:opacity-0 group-has-[:focus-visible]/controls:pointer-events-auto group-has-[:focus-visible]/controls:translate-x-0 group-has-[:focus-visible]/controls:opacity-100 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-hover:disabled:opacity-50"
+        class="icon-button pointer-events-none col-start-1 row-start-1 !size-8 translate-x-[68px] opacity-0 transition-[transform,opacity] duration-200 ease-out disabled:opacity-0 group-has-[:focus-visible]/controls:pointer-events-auto group-has-[:focus-visible]/controls:translate-x-0 group-has-[:focus-visible]/controls:opacity-100 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-hover:disabled:opacity-50"
         :disabled="busy"
         :aria-label="copy.cancelSession"
         :title="copy.cancelSession"
@@ -94,7 +109,7 @@ const interruption = computed(() =>
         <X :size="20" />
       </button>
       <button
-        class="relative z-10 col-start-2 row-start-1 flex size-14 items-center justify-center rounded-full bg-selected text-ink enabled:hover:bg-line-strong"
+        class="relative z-10 col-start-2 row-start-1 flex size-12 items-center justify-center rounded-full bg-selected text-ink enabled:hover:bg-line-strong"
         :disabled="busy"
         :aria-label="primaryLabel"
         :title="primaryLabel"
@@ -114,7 +129,7 @@ const interruption = computed(() =>
       </button>
       <button
         v-if="hasStarted"
-        class="icon-button pointer-events-none col-start-3 row-start-1 !size-8 -translate-x-[72px] opacity-0 transition-[transform,opacity] duration-200 ease-out disabled:opacity-0 group-has-[:focus-visible]/controls:pointer-events-auto group-has-[:focus-visible]/controls:translate-x-0 group-has-[:focus-visible]/controls:opacity-100 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-hover:disabled:opacity-50"
+        class="icon-button pointer-events-none col-start-3 row-start-1 !size-8 -translate-x-[68px] opacity-0 transition-[transform,opacity] duration-200 ease-out disabled:opacity-0 group-has-[:focus-visible]/controls:pointer-events-auto group-has-[:focus-visible]/controls:translate-x-0 group-has-[:focus-visible]/controls:opacity-100 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-hover:disabled:opacity-50"
         :disabled="busy"
         :aria-label="isBreak ? copy.nextFocus : copy.takeBreak"
         :title="isBreak ? copy.nextFocus : copy.takeBreak"
@@ -125,7 +140,7 @@ const interruption = computed(() =>
     </div>
     <p
       v-if="interruption"
-      class="absolute inset-x-5 bottom-2 text-xs leading-snug text-muted"
+      class="absolute inset-x-5 bottom-2 z-20 rounded bg-paper/95 text-xs leading-snug text-muted"
       role="status"
     >
       {{ interruption }}

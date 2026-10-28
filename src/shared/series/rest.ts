@@ -7,6 +7,7 @@ export function restThemeStyle(seriesId: string, dark: boolean): Record<string, 
   return {
     '--ink': palette.ink,
     '--muted': palette.muted,
+    '--faint': palette.muted,
     '--selected': palette.selected,
     '--hover': palette.hover,
     '--line-strong': palette.hover,
