@@ -72,17 +72,18 @@ async function check() {
   progress.value = null;
   result.value = null;
   try {
-    result.value = await updates.check();
+    const checked = await updates.check();
     if (!disposed) {
+      result.value = checked;
       showResult.value = true;
       resultTimer = setTimeout(() => {
         showResult.value = false;
       }, 3000);
     }
   } catch {
-    failed.value = true;
+    if (!disposed) failed.value = true;
   } finally {
-    busy.value = false;
+    if (!disposed) busy.value = false;
   }
 }
 async function install() {

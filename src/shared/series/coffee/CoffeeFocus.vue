@@ -107,36 +107,41 @@ onUnmounted(() => {
 </script>
 <template>
   <div
-    class="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[73px] overflow-hidden rounded-[inherit]"
+    class="relative h-full w-full"
     role="img"
     :aria-label="formatBeanCount(completed.length)"
     :aria-busy="calculating"
   >
     <div
-      v-for="pose in poses"
-      :key="`shadow-${pose.id}`"
-      class="absolute h-1 rounded-[50%] bg-[color-mix(in_srgb,var(--ink)_7%,transparent)] blur-[1px]"
-      :style="{
-        left: `${pose.x / 3.6}%`,
-        bottom: `${pose.shadowY - 3}px`,
-        width: `${pose.size * 0.55}px`,
-        transform: 'translateX(-50%)',
-      }"
-    />
-    <div
-      v-for="pose in poses"
-      :key="pose.id"
-      class="absolute"
-      :style="{
-        left: `${pose.x / 3.6}%`,
-        bottom: `${pose.y - pose.size / 2}px`,
-        width: `${pose.size}px`,
-        height: `${pose.size}px`,
-        transform: `translateX(-50%) rotate(${pose.angle}deg) scaleY(${pose.squash})`,
-        filter: 'drop-shadow(0 1px 0.7px rgb(0 0 0 / 20%))',
-      }"
+      class="absolute inset-x-0 bottom-0 h-[73px] overflow-hidden rounded-[inherit]"
+      data-coffee-pile
     >
-      <CoffeeReward :duration="byId.get(pose.id)?.duration_ms ?? 0" class="size-full" />
+      <div
+        v-for="pose in poses"
+        :key="`shadow-${pose.id}`"
+        class="absolute h-1 rounded-[50%] bg-[color-mix(in_srgb,var(--ink)_7%,transparent)] blur-[1px]"
+        :style="{
+          left: `${pose.x / 3.6}%`,
+          bottom: `${pose.shadowY - 3}px`,
+          width: `${pose.size * 0.55}px`,
+          transform: 'translateX(-50%)',
+        }"
+      />
+      <div
+        v-for="pose in poses"
+        :key="pose.id"
+        class="absolute"
+        :style="{
+          left: `${pose.x / 3.6}%`,
+          bottom: `${pose.y - pose.size / 2}px`,
+          width: `${pose.size}px`,
+          height: `${pose.size}px`,
+          transform: `translateX(-50%) rotate(${pose.angle}deg) scaleY(${pose.squash})`,
+          filter: 'drop-shadow(0 1px 0.7px rgb(0 0 0 / 20%))',
+        }"
+      >
+        <CoffeeReward :duration="byId.get(pose.id)?.duration_ms ?? 0" class="size-full" />
+      </div>
     </div>
   </div>
 </template>

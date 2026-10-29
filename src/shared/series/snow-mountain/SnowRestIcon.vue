@@ -1,0 +1,14 @@
+<template>
+  <svg
+    viewBox="0 0 24 24"
+    xmlns="http://www.w3.org/2000/svg"
+    shape-rendering="crispEdges"
+    aria-hidden="true"
+  >
+    <path
+      d="M2 20v-3h2v-3h2v-3h2V8h2V5h4v3h2v3h2v3h2v3h2v3H2zm8-7v7h4v-7h-1v-3h-2v3h-1z"
+      fill="currentColor"
+      fill-rule="evenodd"
+    />
+  </svg>
+</template>

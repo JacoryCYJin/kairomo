@@ -18,6 +18,8 @@ const height = ref(280);
 const emit = defineEmits<{ prepared: [boolean]; failed: [] }>();
 let observer: ResizeObserver | undefined;
 onMounted(() => {
+  const initialHeight = surface.value?.getBoundingClientRect().height;
+  if (initialHeight && initialHeight > 0) height.value = initialHeight;
   emit('prepared', true);
   observer = new ResizeObserver(([entry]) => {
     if (entry && entry.contentRect.height > 0) height.value = entry.contentRect.height;
@@ -30,11 +32,7 @@ function liquidPath(amplitude: number) {
 }
 </script>
 <template>
-  <div
-    ref="surface"
-    class="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-    aria-hidden="true"
-  >
+  <div ref="surface" class="relative h-full w-full overflow-hidden" aria-hidden="true">
     <div
       v-for="(wave, index) in visual.waves"
       v-show="remaining > 0"

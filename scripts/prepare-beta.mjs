@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    '建立主题套件基础设施，统一小窗、记录展示、记录标识、菜单栏与专属设置入口；保留咖啡现有视觉与数据，整理主题设置分类，精简版本更新区并收紧记录页底部留白。',
+    '新增雪山攀登主题；主题画布覆盖整个小窗，各主题独立安排图形，咖啡保留原有效果；修复雪山休息画面白边，以及更新检查首次 HTTPS 初始化和超时重试。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

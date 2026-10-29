@@ -12,6 +12,36 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 const RELEASES: &str = "https://api.github.com/repos/JacoryCYJin/kairomo/releases?per_page=100";
 const ASSET_PREFIX: &str = "https://github.com/JacoryCYJin/kairomo/releases/download/";
 
+// Reqwest discovery runs before the updater plugin's own TLS initialization.
+// Keep this idempotent: another caller may already have installed a provider.
+pub(crate) fn initialize_tls() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
+fn release_client() -> Result<reqwest::Client, String> {
+    initialize_tls();
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .user_agent("Kairomo-Beta-Updater")
+        .build()
+        .map_err(|_| "update_request_failed".to_owned())
+}
+
+async fn discover_beta_manifest() -> Result<Option<(Version, String)>, String> {
+    let response = release_client()?
+        .get(RELEASES)
+        .send()
+        .await
+        .map_err(|_| "update_request_failed")?
+        .error_for_status()
+        .map_err(|_| "update_request_failed")?;
+    let releases: Vec<Release> = response
+        .json()
+        .await
+        .map_err(|_| "update_invalid_release")?;
+    Ok(beta_manifest(&releases))
+}
+
 #[derive(Default)]
 pub struct Updates {
     busy: AtomicBool,
@@ -106,23 +136,7 @@ pub async fn check_update(
     }
     let _operation = state.begin()?;
     *state.pending.lock().map_err(|_| "update_busy")? = None;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .user_agent("Kairomo-Beta-Updater")
-        .build()
-        .map_err(|_| "update_request_failed")?;
-    let response = client
-        .get(RELEASES)
-        .send()
-        .await
-        .map_err(|_| "update_request_failed")?
-        .error_for_status()
-        .map_err(|_| "update_request_failed")?;
-    let releases: Vec<Release> = response
-        .json()
-        .await
-        .map_err(|_| "update_invalid_release")?;
-    let Some((version, endpoint)) = beta_manifest(&releases) else {
+    let Some((version, endpoint)) = discover_beta_manifest().await? else {
         return Ok(status("unpublished"));
     };
     if version <= app.package_info().version {
@@ -234,6 +248,35 @@ pub async fn install_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn release_client_initializes_tls_in_a_fresh_process() {
+        const CHILD: &str = "KAIROMO_UPDATE_TLS_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            assert!(rustls::crypto::CryptoProvider::get_default().is_none());
+            tauri::async_runtime::block_on(async {
+                release_client().expect("first HTTPS client must not panic");
+                // Repeated initialization must remain safe.
+                release_client().expect("subsequent HTTPS client must also build");
+            });
+            return;
+        }
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "updates::tests::release_client_initializes_tls_in_a_fresh_process",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "fresh-process TLS check failed: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
     #[test]
     fn beta_discovery_ignores_drafts_stable_alpha_and_unusable_assets_and_sorts_semver() {
         let releases = serde_json::from_value::<Vec<Release>>(serde_json::json!([
