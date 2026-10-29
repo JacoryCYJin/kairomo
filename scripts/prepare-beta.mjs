@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    '新增繁体中文、自定义短句库与作者作品署名；支持当天／本周物理豆堆，优化小窗首次显示、设置自动保存及菜单栏状态；统一休息菜单栏与小窗配色，跟随应用外观设置。',
+    '建立主题套件基础设施，统一小窗、记录展示、记录标识、菜单栏与专属设置入口；保留咖啡现有视觉与数据，整理主题设置分类，精简版本更新区并收紧记录页底部留白。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

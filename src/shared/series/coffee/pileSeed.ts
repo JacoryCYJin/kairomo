@@ -1,5 +1,5 @@
-import { beanPeriod } from '../../shared/localCalendar.ts';
-import type { BeanRange } from '../../shared/ipc/types';
+import { beanPeriod } from '../../localCalendar.ts';
+import type { BeanRange } from '../../ipc/types';
 /** Use local calendar identity, not UTC timestamps or a new random value on each open. */
 export function periodPileSeed(base: string, range: BeanRange, now: Date): string {
   const start = new Date(beanPeriod(range, now).start);

@@ -79,6 +79,21 @@ pub fn save_settings(
     Ok(snapshot)
 }
 #[tauri::command]
+pub fn save_theme_options(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    theme_id: String,
+    values: serde_json::Map<String, serde_json::Value>,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .theme_options(&theme_id, values)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
 pub fn save_bean_range(
     app: tauri::AppHandle,
     state: State<'_, AppState>,

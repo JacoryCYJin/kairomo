@@ -239,6 +239,16 @@ impl Runtime {
         settings.phrases = phrases;
         self.configure(settings)
     }
+    pub fn theme_options(
+        &mut self,
+        theme_id: &str,
+        values: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Snapshot, String> {
+        let settings =
+            timer_core::themes::apply_options(&self.engine.state.settings, theme_id, values)
+                .map_err(|e| e.to_string())?;
+        self.configure(settings)
+    }
     pub fn bean_range(&mut self, range: timer_core::BeanRange) -> Result<Snapshot, String> {
         let mut settings = self.engine.state.settings.clone();
         settings.bean_range = range;
@@ -701,6 +711,38 @@ mod tests {
             );
             assert_eq!(restored.engine.state.settings.locale, settings.locale);
             assert!(restored.repository.sessions().unwrap().is_empty());
+        });
+    }
+    #[test]
+    fn theme_option_patch_is_persisted_without_erasing_session_or_other_preferences() {
+        with_runtime(|rt, path| {
+            rt.action("start", "Read").unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+            let original = rt.engine.state.settings.clone();
+            rt.theme_options(
+                "coffee",
+                serde_json::from_value(serde_json::json!({"range":"week"})).unwrap(),
+            )
+            .unwrap();
+            assert!(rt
+                .theme_options(
+                    "coffee",
+                    serde_json::from_value(serde_json::json!({"range":"month"})).unwrap()
+                )
+                .is_err());
+            let restored = Runtime::open(path).unwrap();
+            assert_eq!(
+                restored.engine.state.settings.bean_range,
+                timer_core::BeanRange::Week
+            );
+            assert_eq!(restored.engine.state.current.as_ref().unwrap().id, id);
+            assert_eq!(restored.engine.state.settings.locale, original.locale);
+            assert_eq!(restored.engine.state.settings.phrases, original.phrases);
+            assert_eq!(
+                restored.engine.state.settings.focus_minutes,
+                original.focus_minutes
+            );
+            assert!(restored.engine.state.settings.theme_options.is_empty());
         });
     }
     #[test]

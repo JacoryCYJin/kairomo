@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import type { RestVisual } from '../../shared/series/types';
-const props = defineProps<{
-  remaining: number;
-  running: boolean;
-  dark: boolean;
-  visual: RestVisual;
-}>();
-const palette = computed(() => (props.dark ? props.visual.dark : props.visual.light));
-const level = computed(() => (1 - props.remaining * 0.94) * 100);
+import type { TimerVisualProps } from '../contracts';
+import { remainingRestFraction } from '../rest';
+import { coffeeSeries } from './definition';
+const props = defineProps<TimerVisualProps>();
+const visual = coffeeSeries.rest;
+const palette = computed(() => (props.dark ? visual.dark : visual.light));
+const remaining = computed(() =>
+  remainingRestFraction(props.state.current?.duration_ms ?? 0, props.state.current?.target_ms ?? 0),
+);
+const running = computed(() => props.state.phase === 'running');
+const level = computed(() => (1 - remaining.value * 0.94) * 100);
 // The last sip settles as it empties, avoiding a final wave that snaps away.
-const settling = computed(() => Math.min(1, props.remaining / 0.08));
+const settling = computed(() => Math.min(1, remaining.value / 0.08));
 const surface = ref<HTMLDivElement | null>(null);
 const height = ref(280);
+const emit = defineEmits<{ prepared: [boolean]; failed: [] }>();
 let observer: ResizeObserver | undefined;
 onMounted(() => {
+  emit('prepared', true);
   observer = new ResizeObserver(([entry]) => {
     if (entry && entry.contentRect.height > 0) height.value = entry.contentRect.height;
   });

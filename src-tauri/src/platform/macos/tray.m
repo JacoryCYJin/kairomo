@@ -29,6 +29,11 @@ static NSImage *kairomo_trim_tray_icon(NSData *data) {
     return image;
 }
 
+static NSColor *kairomo_theme_color(NSData *palette, NSUInteger offset) {
+    const unsigned char *rgb = (const unsigned char *)palette.bytes + offset;
+    return [NSColor colorWithSRGBRed:rgb[0]/255.0 green:rgb[1]/255.0 blue:rgb[2]/255.0 alpha:1];
+}
+
 static CGFloat kairomo_tray_width(BOOL hours) {
     NSFont *font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
     NSString *sample = hours ? @"00:00:00" : @"00:00";
@@ -45,6 +50,8 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 @property(nonatomic) NSInteger restAppearance;
 @property(nonatomic, strong) NSImage *focusIcon;
 @property(nonatomic, strong) NSImage *restIcon;
+@property(nonatomic, strong) NSData *restIconData;
+@property(nonatomic, strong) NSData *palette;
 @end
 
 @implementation KairomoTrayContent
@@ -60,23 +67,18 @@ static CGFloat kairomo_tray_width(BOOL hours) {
     NSColor *color = NSColor.labelColor;
     NSColor *background = nil;
     if (self.style == 1) {
-        // Match coffeeSeries.rest's foreground and frontmost liquid layer.
-        // Only rest follows the saved app preference; other states keep their
-        // existing menu-bar appearance and palette.
-        BOOL restDark = self.restAppearance == 2 || (self.restAppearance == 0 && dark);
-        background = restDark
-            ? [NSColor colorWithSRGBRed:73.0/255 green:51.0/255 blue:41.0/255 alpha:1]
-            : [NSColor colorWithSRGBRed:191.0/255 green:141.0/255 blue:99.0/255 alpha:1];
-        color = restDark
-            ? [NSColor colorWithSRGBRed:231.0/255 green:199.0/255 blue:166.0/255 alpha:1]
-            : [NSColor colorWithSRGBRed:61.0/255 green:37.0/255 blue:24.0/255 alpha:1];
+        // The menu bar can have a different effective appearance from app windows.
+        // Resolve system mode from the app, matching the timer's theme context.
+        BOOL appDark = [[NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:
+            @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
+        BOOL restDark = self.restAppearance == 2 || (self.restAppearance == 0 && appDark);
+        NSUInteger offset = restDark ? 12 : 0;
+        background = kairomo_theme_color(self.palette, offset);
+        color = kairomo_theme_color(self.palette, offset + 3);
     } else if (self.style == 2) {
-        background = dark
-            ? [NSColor colorWithSRGBRed:69.0/255 green:55.0/255 blue:43.0/255 alpha:1]
-            : [NSColor colorWithSRGBRed:243.0/255 green:231.0/255 blue:217.0/255 alpha:1];
-        color = dark
-            ? [NSColor colorWithSRGBRed:235.0/255 green:195.0/255 blue:152.0/255 alpha:1]
-            : [NSColor colorWithSRGBRed:118.0/255 green:81.0/255 blue:53.0/255 alpha:1];
+        NSUInteger offset = dark ? 18 : 6;
+        background = kairomo_theme_color(self.palette, offset);
+        color = kairomo_theme_color(self.palette, offset + 3);
     }
     CGFloat centerY = NSMidY(self.bounds);
     if (background) {
@@ -141,7 +143,7 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 
 void kairomo_update_tray(void *pointer, const char *label, int style, int restAppearance,
                          const unsigned char *focus, size_t focusLength,
-                         const unsigned char *rest, size_t restLength) {
+                         const unsigned char *rest, size_t restLength, const unsigned char *palette) {
     NSStatusItem *item = (__bridge NSStatusItem *)pointer;
     NSStatusBarButton *button = item.button;
     if (!button) return;
@@ -152,12 +154,22 @@ void kairomo_update_tray(void *pointer, const char *label, int style, int restAp
     if (!content) {
         content = [[KairomoTrayContent alloc] initWithFrame:NSMakeRect(0, 0, width, button.bounds.size.height)];
         content.focusIcon = kairomo_trim_tray_icon([NSData dataWithBytes:focus length:focusLength]);
-        content.restIcon = kairomo_trim_tray_icon([NSData dataWithBytes:rest length:restLength]);
         content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         button.title = @"";
         button.image = nil;
         [button addSubview:content positioned:NSWindowBelow relativeTo:nil];
         objc_setAssociatedObject(item, &contentKey, content, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    NSData *nextPalette = [NSData dataWithBytes:palette length:24];
+    NSData *nextIcon = [NSData dataWithBytes:rest length:restLength];
+    if (![content.restIconData isEqualToData:nextIcon]) {
+        content.restIconData = nextIcon;
+        content.restIcon = kairomo_trim_tray_icon(nextIcon);
+        content.needsDisplay = YES;
+    }
+    if (![content.palette isEqualToData:nextPalette]) {
+        content.palette = nextPalette;
+        content.needsDisplay = YES;
     }
     if (item.length != width) {
         item.length = width;

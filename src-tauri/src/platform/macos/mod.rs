@@ -12,6 +12,9 @@ tauri_panel! {
         }
     })
 }
+mod theme_icons {
+    include!(concat!(env!("OUT_DIR"), "/theme_icons.rs"));
+}
 static HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 extern "C" {
     fn kairomo_update_tray(
@@ -23,6 +26,7 @@ extern "C" {
         focus_len: usize,
         rest: *const u8,
         rest_len: usize,
+        palette: *const u8,
     );
 }
 
@@ -31,19 +35,23 @@ pub fn update_tray(
     label: &str,
     style: i32,
     appearance: &timer_core::Appearance,
+    theme_id: &str,
 ) {
     let rest_appearance = match appearance {
         timer_core::Appearance::System => 0,
         timer_core::Appearance::Light => 1,
         timer_core::Appearance::Dark => 2,
     };
+    let theme = timer_core::themes::theme(theme_id);
+    let rest_icon = theme_icons::rest_icon(theme_id);
+    let palette = crate::platform::theme_palette::menu_palette(theme);
     let Ok(label) = std::ffi::CString::new(label) else {
         return;
     };
     let _ = tray.with_inner_tray_icon(move |tray| {
         if let Some(item) = tray.ns_status_item() {
             let focus = include_bytes!("../../../icons/tray.png");
-            let rest = include_bytes!("../../../icons/tray-rest.png");
+            let rest = rest_icon;
             // SAFETY: with_inner_tray_icon runs on the main thread. The retained
             // status item and CString outlive this synchronous AppKit call.
             unsafe {
@@ -56,6 +64,7 @@ pub fn update_tray(
                     focus.len(),
                     rest.as_ptr(),
                     rest.len(),
+                    palette.as_ptr(),
                 );
             }
         }

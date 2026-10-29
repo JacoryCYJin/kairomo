@@ -3,6 +3,7 @@ mod engine;
 mod model;
 mod phrases;
 mod ports;
+pub mod themes;
 pub use engine::*;
 pub use model::*;
 pub use phrases::*;

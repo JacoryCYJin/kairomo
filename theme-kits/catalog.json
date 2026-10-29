@@ -1,0 +1,54 @@
+{
+  "default": "coffee",
+  "themes": {
+    "coffee": {
+      "name": {
+        "zh-CN": "咖啡",
+        "zh-TW": "咖啡",
+        "en-US": "Coffee",
+        "ja-JP": "コーヒー"
+      },
+      "rest": {
+        "light": {
+          "ink": "#3D2518",
+          "muted": "#43291C",
+          "selected": "#EED5BA",
+          "hover": "#E3BF98",
+          "line": "#D1A57B",
+          "background": "#BF8D63",
+          "layers": ["#D8B18A", "#C89B72", "#BF8D63"]
+        },
+        "dark": {
+          "ink": "#E7C7A6",
+          "muted": "#D8B897",
+          "selected": "#51392C",
+          "hover": "#634634",
+          "line": "#79563F",
+          "background": "#493329",
+          "layers": ["#302119", "#3B2A21", "#493329"]
+        }
+      },
+      "menu": {
+        "restIcon": "coffee/rest.png",
+        "overtime": {
+          "light": {
+            "background": "#F3E7D9",
+            "ink": "#765135"
+          },
+          "dark": {
+            "background": "#45372B",
+            "ink": "#EBC398"
+          }
+        }
+      },
+      "options": {
+        "range": {
+          "type": "enum",
+          "values": ["day", "week"],
+          "default": "day",
+          "legacyField": "bean_range"
+        }
+      }
+    }
+  }
+}

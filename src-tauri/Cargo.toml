@@ -8,6 +8,7 @@ name = "kairomo_desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+serde_json.workspace = true
 cc = "1"
 tauri-build = { version = "2", features = [] }
 

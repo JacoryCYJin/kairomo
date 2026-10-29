@@ -24,7 +24,13 @@ export const emptyPhrases = (): Phrases => ({
   selected_id: null,
 });
 export type BeanRange = 'day' | 'week';
+export type ThemeOptionValue = string | number | boolean;
+export interface ThemeOptionsChange {
+  theme_id: SeriesId;
+  values: Record<string, ThemeOptionValue>;
+}
 export interface Settings {
+  theme_options?: Partial<Record<SeriesId, Record<string, ThemeOptionValue>>>;
   bean_range: BeanRange;
   phrases: Phrases;
   focus_minutes: number;

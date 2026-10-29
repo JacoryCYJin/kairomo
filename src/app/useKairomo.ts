@@ -1,6 +1,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { api, desktop } from '../shared/ipc/client';
-import type { Action, Preferences, Session, Settings, Snapshot } from '../shared/ipc/types';
+import type {
+  Action,
+  Preferences,
+  Session,
+  Settings,
+  Snapshot,
+  ThemeOptionsChange,
+} from '../shared/ipc/types';
+import { defaultSeriesId } from '../shared/series/catalog';
 import { emptyPhrases } from '../shared/ipc/types';
 import { copy, locale } from '../shared/i18n';
 import { settingWriter } from '../features/settings/settingWriter';
@@ -18,7 +26,7 @@ const defaults: Snapshot = {
     notifications: true,
     focus_mode: 'manual',
     appearance: 'system',
-    visual_series: 'coffee',
+    visual_series: defaultSeriesId,
   },
   needs_recovery: false,
   pause_reason: null,
@@ -202,6 +210,7 @@ export function useKairomo() {
     cancelSession,
     configure,
     preferences,
+    themeOptions: (change: ThemeOptionsChange) => saveSetting(() => api.themeOptions(change)),
     beanRange: (range: Settings['bean_range']) => saveSetting(() => api.beanRange(range)),
     phrases: (phrases: Settings['phrases']) => saveSetting(() => api.phrases(phrases)),
     remove,

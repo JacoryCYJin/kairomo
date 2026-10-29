@@ -79,7 +79,7 @@ const filtered = computed(() =>
 const total = computed(() =>
   totalInPeriod(sessions.value, 'focus', period.value, props.checkpoint),
 );
-const beans = computed(() => earnedBeans(props.records, period.value));
+const completedRecords = computed(() => earnedBeans(props.records, period.value));
 const groups = computed(() => {
   const result: { date: string; records: Session[] }[] = [];
   for (const session of filtered.value.slice(0, visibleCount.value)) {
@@ -180,7 +180,7 @@ function submit() {
 }
 </script>
 <template>
-  <section class="pb-6">
+  <section>
     <div class="flex items-center justify-between gap-3 pt-5">
       <h1 class="text-xl font-semibold tracking-tight">{{ copy.historyTitle }}</h1>
       <button
@@ -219,7 +219,8 @@ function submit() {
       <div class="flex min-w-0 flex-col items-center" data-history-collection-column>
         <SeriesCollection
           class="!h-auto min-h-0 w-full flex-1"
-          :records="beans"
+          :records="filtered"
+          :completed-records="completedRecords"
           :series-id="seriesId"
           :total="total"
           fit-height

@@ -1,6 +1,6 @@
-import { beanPeriod } from '../../shared/localCalendar.ts';
-import type { BeanRange, Session } from '../../shared/ipc/types';
-import { isCompletedFocus } from '../../shared/completions.ts';
+import { beanPeriod } from '../localCalendar.ts';
+import type { BeanRange, Session } from '../ipc/types';
+import { isCompletedFocus } from '../completions.ts';
 /** Completion date owns the bean. Changing days never changes the records. */
 export function periodCompletions(
   records: readonly Session[],

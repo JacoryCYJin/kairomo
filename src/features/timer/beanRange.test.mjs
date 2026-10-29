@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { beanPeriod, localWeekStart } from '../../shared/localCalendar.ts';
-import { periodCompletions } from './completions.ts';
+import { periodCompletions } from '../../shared/series/period.ts';
 const at = (y, m, d, h = 0) => new Date(y, m - 1, d, h);
 const record = (id, date, kind = 'focus') => ({
   id,

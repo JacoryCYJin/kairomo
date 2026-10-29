@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Pause, Play, SkipForward, X } from 'lucide-vue-next';
-import PeriodBeans from './PeriodBeans.vue';
+import { componentsFor } from '../../shared/series/renderers';
 import PhraseDisplay from './PhraseDisplay.vue';
 import CancelSessionDialog from './CancelSessionDialog.vue';
-import CoffeeCupIcon from '../../shared/ui/CoffeeCupIcon.vue';
-import RestBackdrop from './RestBackdrop.vue';
 import { timerLayout } from './timerLayout';
-import { seriesFor } from '../../shared/series/catalog';
-import { remainingRestFraction, restThemeStyle } from '../../shared/series/rest';
+import { seriesThemeStyle } from '../../shared/series/rest';
 import { clock, copy } from '../../shared/i18n';
 import type { Action, Session, Snapshot } from '../../shared/ipc/types';
 const props = defineProps<{
@@ -20,15 +17,24 @@ const props = defineProps<{
   cancelSession: (id: string) => Promise<boolean>;
 }>();
 const cancellation = ref<InstanceType<typeof CancelSessionDialog> | null>(null);
-const emit = defineEmits<{ action: [Action]; prepared: [ready: boolean]; pileFailed: [] }>();
+const emit = defineEmits<{ action: [Action]; prepared: [ready: boolean]; visualFailed: [] }>();
 const layout = computed(() => timerLayout(props.state));
 const current = computed(() => props.state.current);
 const isBreak = computed(() => current.value?.kind === 'break');
 const visualSeries = computed(() => props.state.settings.visual_series);
-const restVisual = computed(() => seriesFor(visualSeries.value).rest);
-const restStyle = computed(() =>
-  isBreak.value ? restThemeStyle(visualSeries.value, !!props.dark) : undefined,
+const kit = computed(() => componentsFor(visualSeries.value));
+const focusPrepared = ref(false),
+  restPrepared = ref(false);
+watch(visualSeries, () => {
+  focusPrepared.value = false;
+  restPrepared.value = false;
+});
+watch(
+  [isBreak, focusPrepared, restPrepared],
+  () => emit('prepared', isBreak.value ? restPrepared.value : focusPrepared.value),
+  { immediate: true },
 );
+const restStyle = computed(() => seriesThemeStyle(visualSeries.value, !!props.dark, isBreak.value));
 const readyToStart = computed(
   () => props.state.phase === 'paused' && current.value?.intervals.length === 0,
 );
@@ -66,12 +72,16 @@ const interruption = computed(() =>
     :class="isBreak ? 'bg-paper' : ''"
     :style="restStyle"
   >
-    <RestBackdrop
+    <component
       v-if="isBreak"
-      :remaining="remainingRestFraction(elapsed, target)"
-      :running="state.phase === 'running'"
-      :dark="!!dark"
-      :visual="restVisual"
+      :is="kit.rest"
+      :key="`rest-${visualSeries}`"
+      :state="state"
+      :records="records"
+      :dark="dark"
+      :warming-up="warmingUp"
+      @prepared="restPrepared = $event"
+      @failed="emit('visualFailed')"
     />
     <div
       class="absolute inset-x-2.5 top-[43px] z-10 whitespace-nowrap text-timer font-medium !leading-[90px] tabular-nums"
@@ -84,15 +94,16 @@ const interruption = computed(() =>
     <div v-if="layout.phrase" class="absolute inset-x-[34px] top-[145px] z-10">
       <PhraseDisplay :state="state" />
     </div>
-    <PeriodBeans
-      :prepare-hidden="warmingUp"
-      @prepared="emit('prepared', $event)"
-      @failed="emit('pileFailed')"
-      :random-seed="state.bean_random_seed"
-      :range="state.settings.bean_range"
-      v-show="!isBreak"
+    <component
+      :is="kit.focus"
+      :key="`focus-${visualSeries}`"
+      :state="state"
       :records="records"
-      :series-id="state.settings.visual_series"
+      :dark="dark"
+      :warming-up="warmingUp"
+      v-show="!isBreak"
+      @prepared="focusPrepared = $event"
+      @failed="emit('visualFailed')"
     />
     <div
       class="group/controls absolute left-1/2 z-10 grid -translate-x-1/2 grid-cols-[32px_48px_32px] items-center justify-center gap-7"
@@ -135,7 +146,11 @@ const interruption = computed(() =>
         :title="isBreak ? copy.nextFocus : copy.takeBreak"
         @click="emit('action', 'switch')"
       >
-        <SkipForward v-if="isBreak" :size="17" /><CoffeeCupIcon v-else class="size-[18px]" />
+        <SkipForward v-if="isBreak" :size="17" /><component
+          :is="kit.restIcon"
+          v-else
+          class="size-[18px]"
+        />
       </button>
     </div>
     <p

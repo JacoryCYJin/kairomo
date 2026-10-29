@@ -25,7 +25,10 @@ pub enum Appearance {
 }
 
 fn default_visual_series() -> String {
-    "coffee".into()
+    crate::themes::catalog()["default"]
+        .as_str()
+        .expect("default theme")
+        .into()
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +42,9 @@ pub enum BeanRange {
 pub struct Settings {
     #[serde(default)]
     pub bean_range: BeanRange,
+    #[serde(default)]
+    pub theme_options:
+        std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
     #[serde(default)]
     pub phrases: crate::Phrases,
     pub focus_minutes: u32,
@@ -57,6 +63,7 @@ impl Default for Settings {
         Self {
             phrases: crate::Phrases::default(),
             bean_range: BeanRange::default(),
+            theme_options: Default::default(),
             focus_minutes: 50,
             break_minutes: 10,
             locale: "zh-CN".into(),
@@ -86,9 +93,10 @@ impl Settings {
         if !["zh-CN", "zh-TW", "en-US", "ja-JP"].contains(&self.locale.as_str()) {
             return Err(TimerError::InvalidLocale);
         }
-        if self.visual_series != "coffee" {
+        if !crate::themes::registered(&self.visual_series) {
             return Err(TimerError::InvalidSeries);
         }
+        crate::themes::validate_saved_options(&self.theme_options)?;
         Ok(())
     }
 }
@@ -169,6 +177,8 @@ pub enum TimerError {
     InvalidDuration,
     #[error("invalid_series")]
     InvalidSeries,
+    #[error("invalid_theme_options")]
+    InvalidThemeOptions,
     #[error("invalid_locale")]
     InvalidLocale,
     #[error("title_too_long")]
