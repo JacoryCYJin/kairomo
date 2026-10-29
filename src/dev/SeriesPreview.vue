@@ -101,6 +101,9 @@ const caption = computed(() =>
         @preference="settings = { ...settings, ...$event }"
         @phrases="settings = { ...settings, phrases: $event }"
         @bean-range="settings = { ...settings, bean_range: $event }"
+        @theme-options="
+          settings = { ...settings, bean_range: $event.values.range as Settings['bean_range'] }
+        "
       />
     </div>
   </main>

@@ -1,21 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
-import SeriesReward from '../../shared/series/SeriesReward.vue';
-import type { SeriesId } from '../../shared/series/types';
-import type { BeanRange, Session } from '../../shared/ipc/types';
-import { formatBeanCount } from '../../shared/i18n';
-import { api, desktop } from '../../shared/ipc/client';
-import { periodCompletions } from './completions';
+import CoffeeReward from './CoffeeReward.vue';
+import type { TimerVisualProps } from '../contracts';
+import { formatBeanCount } from '../../i18n';
+import { api, desktop } from '../../ipc/client';
+import { periodCompletions } from '../period';
 import type { PileBean } from './beanPile';
 import { pileController, type PileRequest } from './pileController';
 import { periodPileSeed } from './pileSeed';
-const props = defineProps<{
-  records: Session[];
-  seriesId: SeriesId;
-  range: BeanRange;
-  randomSeed: string | null;
-  prepareHidden?: boolean;
-}>();
+const props = defineProps<TimerVisualProps>();
 const emit = defineEmits<{ prepared: [ready: boolean]; failed: [] }>();
 const now = ref(new Date());
 const periods = computed(() =>
@@ -24,13 +17,15 @@ const periods = computed(() =>
     return {
       range,
       completed,
-      seed: props.randomSeed ? periodPileSeed(props.randomSeed, range, now.value) : null,
+      seed: props.state.bean_random_seed
+        ? periodPileSeed(props.state.bean_random_seed, range, now.value)
+        : null,
       ids: completed.map((record) => record.id),
     };
   }),
 );
 const selected = computed(() =>
-  periods.value.find((period) => period.range === (props.range ?? 'day'))!,
+  periods.value.find((period) => period.range === (props.state.settings.bean_range ?? 'day'))!,
 );
 const completed = computed(() => selected.value.completed);
 const byId = computed(() => new Map(completed.value.map((session) => [session.id, session])));
@@ -61,7 +56,7 @@ const controller = pileController(
 );
 function reconcile() {
   if (disposed) return;
-  const paused = document.hidden && !props.prepareHidden;
+  const paused = document.hidden && !props.warmingUp;
   if (paused) controller.suspend();
   controller.prepare(requests.value);
   if (!paused) controller.resume();
@@ -84,7 +79,11 @@ function visible() {
   dateChanged();
 }
 watch(
-  [() => JSON.stringify(requests.value), () => props.range, () => props.prepareHidden],
+  [
+    () => JSON.stringify(requests.value),
+    () => props.state.settings.bean_range,
+    () => props.warmingUp,
+  ],
   reconcile,
 );
 onMounted(async () => {
@@ -137,11 +136,7 @@ onUnmounted(() => {
         filter: 'drop-shadow(0 1px 0.7px rgb(0 0 0 / 20%))',
       }"
     >
-      <SeriesReward
-        :series-id="seriesId"
-        :duration="byId.get(pose.id)?.duration_ms ?? 0"
-        class="size-full"
-      />
+      <CoffeeReward :duration="byId.get(pose.id)?.duration_ms ?? 0" class="size-full" />
     </div>
   </div>
 </template>

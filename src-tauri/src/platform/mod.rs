@@ -1,6 +1,8 @@
 mod language;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(any(target_os = "macos", test))]
+mod theme_palette;
 use crate::runtime::AppState;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -186,6 +188,7 @@ pub fn update(app: &tauri::AppHandle, state: &Snapshot, reached: Option<TargetRe
                 0
             },
             &state.settings.appearance,
+            &state.settings.visual_series,
         );
         let stage = if resting { copy.rest } else { copy.focus };
         let _ = tray.set_tooltip(Some(format!("Kairomo · {stage} · {label}")));

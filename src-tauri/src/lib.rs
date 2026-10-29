@@ -89,6 +89,7 @@ pub fn run() {
             commands::save_preferences,
             commands::save_phrases,
             commands::save_bean_range,
+            commands::save_theme_options,
             commands::sync_window_appearance,
             commands::delete_session,
             commands::correct_session,

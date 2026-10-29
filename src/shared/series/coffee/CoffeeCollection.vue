@@ -11,12 +11,14 @@ import { jarPath as jar } from './jarGeometry';
 const props = withDefaults(
   defineProps<{
     records: Session[];
+    completedRecords?: Session[];
     total: number;
     fitHeight?: boolean;
   }>(),
-  { fitHeight: false },
+  { fitHeight: false, completedRecords: undefined },
 );
-const visible = computed(() => props.records.slice(0, coffeeSeries.collection.displayLimit));
+const completed = computed(() => props.completedRecords ?? props.records);
+const visible = computed(() => completed.value.slice(0, coffeeSeries.collection.displayLimit));
 const byId = computed(() => new Map(visible.value.map((record) => [record.id, record])));
 const { layout } = useCoffeeLayout(() => visible.value.map((record) => record.id));
 const glassClip = `coffee-glass-${useId()}`;
@@ -46,7 +48,7 @@ function description(id: string) {
         viewBox="156 20 168 236"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        :aria-label="formatBeanCount(records.length)"
+        :aria-label="formatBeanCount(completed.length)"
         :aria-busy="!layout"
       >
         <defs>

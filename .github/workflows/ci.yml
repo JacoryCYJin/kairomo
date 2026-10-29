@@ -23,6 +23,7 @@ jobs:
           components: rustfmt, clippy
       - run: npm ci
       - run: npm run check
+      - run: npm test
       - run: npm run format:check
       - run: npm run build
       - run: cargo fmt --all -- --check

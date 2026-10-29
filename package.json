@@ -1,6 +1,6 @@
 {
   "name": "kairomo",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "format": "prettier --write src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
     "format:check": "prettier --check src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
-    "build:beta": "bash scripts/package-beta.sh"
+    "build:beta": "bash scripts/package-beta.sh",
+    "test": "node scripts/test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

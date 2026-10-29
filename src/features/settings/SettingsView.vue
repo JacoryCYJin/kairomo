@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { availableSeries } from '../../shared/series/catalog';
-import { copy, locale } from '../../shared/i18n';
-import type { Preferences, Settings } from '../../shared/ipc/types';
+import { copy } from '../../shared/i18n';
+import type { Preferences, Settings, ThemeOptionsChange } from '../../shared/ipc/types';
 import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import UpdateSettings from './UpdateSettings.vue';
 import PhraseSettings from './PhraseSettings.vue';
+import ThemeSettings from './ThemeSettings.vue';
 const props = defineProps<{ settings: Settings; busy: boolean }>();
 const emit = defineEmits<{
   save: [
@@ -14,6 +14,7 @@ const emit = defineEmits<{
   preference: [Partial<Preferences>];
   phrases: [Settings['phrases']];
   beanRange: [Settings['bean_range']];
+  themeOptions: [ThemeOptionsChange];
 }>();
 const libraryOpen = ref(false);
 const root = ref<HTMLElement | null>(null);
@@ -214,42 +215,14 @@ function choosePreference(key: keyof Preferences, value: string) {
               :disabled="busy"
             />
           </div>
-          <div
-            class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
-          >
-            <label for="bean-range" class="text-xs">{{ copy.beanRange }}</label
-            ><SettingsSelect
-              id="bean-range"
-              :model-value="settings.bean_range ?? 'day'"
-              :label="copy.beanRange"
-              :options="[
-                { value: 'day', label: copy.beanDay },
-                { value: 'week', label: copy.thisWeek },
-              ]"
-              :disabled="busy"
-              @update:model-value="emit('beanRange', $event as Settings['bean_range'])"
-            />
-          </div>
-          <div
-            class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
-          >
-            <label for="visual-series" class="text-xs">{{ copy.visualSeries }}</label>
-            <SettingsSelect
-              id="visual-series"
-              :model-value="settings.visual_series"
-              :label="copy.visualSeries"
-              :options="
-                availableSeries.map((series) => ({
-                  value: series.id,
-                  label: series.id === 'coffee' ? copy.coffeeSeriesShort : series.name[locale],
-                }))
-              "
-              @update:model-value="choosePreference('visual_series', $event)"
-              :disabled="busy"
-            />
-          </div>
         </div>
       </section>
+      <ThemeSettings
+        :settings="settings"
+        :busy="busy"
+        @theme="choosePreference('visual_series', $event)"
+        @change="emit('themeOptions', $event)"
+      />
     </form>
     <PhraseSettings
       :settings="settings.phrases"

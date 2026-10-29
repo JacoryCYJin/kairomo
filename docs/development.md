@@ -31,6 +31,7 @@ bash scripts/dev.sh stop
 
 | 命令                                                  | 验证对象                       |
 | ----------------------------------------------------- | ------------------------------ |
+| npm test                                              | 前端行为、主题契约与物理回归   |
 | npm run check                                         | Vue/TypeScript、lint、模块边界 |
 | npm run format:check                                  | 源码与文档格式                 |
 | npm run build                                         | 实际前端构建                   |

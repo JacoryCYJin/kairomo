@@ -27,8 +27,8 @@ test('catalog contains only implemented series and unknown identifiers fall back
     availableSeries.map((s) => s.id),
     ['coffee'],
   );
-  assert.equal(seriesFor('money'), coffeeSeries);
-  assert.equal(seriesFor(undefined), coffeeSeries);
+  assert.equal(seriesFor('money').id, coffeeSeries.id);
+  assert.equal(seriesFor(undefined).id, coffeeSeries.id);
   assert.equal(coffeeSeries.collection.insideCapacity, 80);
   assert.equal(coffeeSeries.collection.displayLimit, 120);
 });

@@ -9,6 +9,7 @@ import type {
   Preferences,
   Session,
   Settings,
+  ThemeOptionsChange,
   Snapshot,
 } from './types';
 export const desktop = isTauri();
@@ -27,6 +28,8 @@ export const api = {
     invoke<Snapshot>('timer_action', { action, title, expectedSessionId, expectedPhase }),
   cancelSession: (expectedId: string) => invoke<Snapshot>('cancel_session', { expectedId }),
   settings: (settings: Settings) => invoke<Snapshot>('save_settings', { settings }),
+  themeOptions: (change: ThemeOptionsChange) =>
+    invoke<Snapshot>('save_theme_options', { themeId: change.theme_id, values: change.values }),
   beanRange: (range: BeanRange) => invoke<Snapshot>('save_bean_range', { range }),
   phrases: (phrases: Phrases) => invoke<Snapshot>('save_phrases', { phrases }),
   preferences: (preferences: Partial<Preferences>) =>

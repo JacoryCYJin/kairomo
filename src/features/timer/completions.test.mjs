@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { todayCompletions } from './completions.ts';
+import { todayCompletions } from '../../shared/series/period.ts';
 const at = (day, hour = 0) => new Date(2026, 9, day, hour).getTime();
 const session = (id, end, kind = 'focus') => ({
   id,

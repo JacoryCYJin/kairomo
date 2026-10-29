@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { phraseReadingMs } from './phrasePlayback.ts';
-import { cachedPile, rememberPile } from './pileCache.ts';
+import { cachedPile, rememberPile } from '../../shared/series/coffee/pileCache.ts';
 test('segments receive reading time without changing the stored sentence', () => {
   assert.equal(phraseReadingMs('短句'), 8000);
   assert.ok(phraseReadingMs('a'.repeat(60)) > 8000);

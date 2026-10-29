@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout } from 'node:timers';
 import { popupStartup } from './popupStartup.ts';
-import { pileController } from '../features/timer/pileController.ts';
-import { createPileJob } from '../features/timer/beanPile.ts';
+import { pileController } from '../shared/series/coffee/pileController.ts';
+import { createPileJob } from '../shared/series/coffee/beanPile.ts';
 function deferred() {
   let resolve;
   const promise = new Promise((done) => {

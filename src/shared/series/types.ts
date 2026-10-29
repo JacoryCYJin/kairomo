@@ -1,5 +1,6 @@
+import manifest from '../../../theme-kits/catalog.json' with { type: 'json' };
 import type { AppLocale } from '../i18n';
-export type SeriesId = 'coffee';
+export type SeriesId = keyof typeof manifest.themes;
 export type SeriesName = Readonly<Record<AppLocale, string>>;
 export interface RestPalette {
   readonly ink: string;
@@ -7,16 +8,15 @@ export interface RestPalette {
   readonly selected: string;
   readonly hover: string;
   readonly line: string;
-  readonly waves: readonly [string, string, string];
+  readonly background: string;
 }
 export interface RestVisual {
-  readonly kind: 'liquid';
   readonly light: RestPalette;
   readonly dark: RestPalette;
-  readonly waves: readonly { readonly amplitude: number; readonly period: number }[];
 }
 export interface SeriesDefinition {
   readonly id: SeriesId;
   readonly name: SeriesName;
   readonly rest: RestVisual;
+  readonly focus?: RestVisual;
 }

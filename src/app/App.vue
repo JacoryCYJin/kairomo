@@ -12,7 +12,7 @@ import { startWindowDrag, windowTitle } from '../shared/ipc/window';
 import { useKairomo } from './useKairomo';
 import { popupStartup } from './popupStartup';
 import { updates } from '../shared/ipc/updates';
-import { restThemeStyle } from '../shared/series/rest';
+import { seriesThemeStyle } from '../shared/series/rest';
 const auxiliary = new URLSearchParams(window.location.search).has('view');
 const view = ref<'history' | 'settings'>('settings');
 const shell = ref<HTMLElement | null>(null);
@@ -20,8 +20,8 @@ const title = ref('Kairomo');
 const development = ref(false);
 const identityReady = ref(!desktop || auxiliary);
 const startupReleased = ref(!desktop || auxiliary);
-const beansPrepared = ref(false);
-const beansFailed = ref(false);
+const visualPrepared = ref(false);
+const visualFailed = ref(false);
 const k = useKairomo();
 const { state, records, ready, busy, error, notice } = k;
 const popupHeight = computed(() => timerLayout(state.value).height);
@@ -49,9 +49,7 @@ const dark = computed(
 );
 const resting = computed(() => !auxiliary && state.value.current?.kind === 'break');
 const visualSeries = computed(() => state.value.settings.visual_series);
-const restStyle = computed(() =>
-  resting.value ? restThemeStyle(visualSeries.value, dark.value) : undefined,
-);
+const restStyle = computed(() => seriesThemeStyle(visualSeries.value, dark.value, resting.value));
 watch(
   dark,
   (value) => {
@@ -84,15 +82,15 @@ const startup = popupStartup(
     error.value = copy.value.windowError;
   },
 );
-function pileFailed() {
-  beansFailed.value = true;
+function themeVisualFailed() {
+  visualFailed.value = true;
   error.value = copy.value.error;
 }
 watch(
   [
     ready,
-    beansPrepared,
-    beansFailed,
+    visualPrepared,
+    visualFailed,
     resting,
     identityReady,
     popupHeight,
@@ -105,9 +103,7 @@ watch(
     // A failed load displays its error and retry control, rather than trapping a hidden window.
     const prepared =
       !!error.value ||
-      (ready.value &&
-        identityReady.value &&
-        (resting.value || beansPrepared.value || beansFailed.value));
+      (ready.value && identityReady.value && (visualPrepared.value || visualFailed.value));
     void startup.update(prepared);
   },
   { flush: 'post' },
@@ -313,8 +309,8 @@ onUnmounted(() => {
       v-if="!auxiliary"
       :state="state"
       :warming-up="!startupReleased"
-      @prepared="beansPrepared = $event"
-      @pile-failed="pileFailed"
+      @prepared="visualPrepared = $event"
+      @visual-failed="themeVisualFailed"
       :dark="dark"
       :records="records"
       :cancel-session="k.cancelSession"
@@ -325,7 +321,7 @@ onUnmounted(() => {
       v-else
       class="details-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-none"
     >
-      <div class="mx-auto max-w-[820px] px-7 pb-6">
+      <div class="mx-auto max-w-[820px] px-7" :class="view === 'history' ? 'pb-3' : 'pb-6'">
         <HistoryView
           v-if="view === 'history'"
           :records="records"
@@ -344,6 +340,7 @@ onUnmounted(() => {
           @save="k.configure"
           @preference="k.preferences"
           @phrases="k.phrases"
+          @theme-options="k.themeOptions"
           @bean-range="k.beanRange"
         />
       </div>
