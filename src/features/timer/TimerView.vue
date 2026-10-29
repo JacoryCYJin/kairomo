@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { Pause, Play, SkipForward, X } from 'lucide-vue-next';
+import ThemeCanvas from '../../shared/series/ThemeCanvas.vue';
 import { componentsFor } from '../../shared/series/renderers';
 import PhraseDisplay from './PhraseDisplay.vue';
 import CancelSessionDialog from './CancelSessionDialog.vue';
@@ -72,9 +73,10 @@ const interruption = computed(() =>
     :class="isBreak ? 'bg-paper' : ''"
     :style="restStyle"
   >
-    <component
+    <ThemeCanvas
       v-if="isBreak"
-      :is="kit.rest"
+      :visual="kit.rest"
+      kind="rest"
       :key="`rest-${visualSeries}`"
       :state="state"
       :records="records"
@@ -94,8 +96,9 @@ const interruption = computed(() =>
     <div v-if="layout.phrase" class="absolute inset-x-[34px] top-[145px] z-10">
       <PhraseDisplay :state="state" />
     </div>
-    <component
-      :is="kit.focus"
+    <ThemeCanvas
+      :visual="kit.focus"
+      kind="focus"
       :key="`focus-${visualSeries}`"
       :state="state"
       :records="records"

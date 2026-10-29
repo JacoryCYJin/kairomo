@@ -1,6 +1,6 @@
 # Beta 打包、安装与更新
 
-当前版本：0.1.0-beta.4。发布至 GitHub Beta prerelease，提供 Apple Silicon macOS 安装包与签名更新包。
+当前版本：0.1.0-beta.5。发布至 GitHub Beta prerelease，提供 Apple Silicon macOS 安装包与签名更新包。
 
 ## 身份与数据
 
@@ -25,7 +25,7 @@ bash scripts/dev.sh beta
 
 macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依赖；后续复用缓存。脚本不启动开发服务、不停止当前计时、不自动安装或发布。
 
-应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.4/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
+应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.5/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
 
 双击 DMG 后将 Kairomo Beta 拖入 Applications。安装后从 `/Applications/Kairomo Beta.app` 启动日常版本。开发构建位于 `target/debug/bundle/macos/Kairomo Dev.app`，开发启动继续使用 `bash scripts/dev.sh start`。
 

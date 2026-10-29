@@ -25,7 +25,7 @@ test('five roast tiers use exact effective-time boundaries and saturate at 60 mi
 test('catalog contains only implemented series and unknown identifiers fall back to coffee', () => {
   assert.deepEqual(
     availableSeries.map((s) => s.id),
-    ['coffee'],
+    ['coffee', 'snow-mountain'],
   );
   assert.equal(seriesFor('money').id, coffeeSeries.id);
   assert.equal(seriesFor(undefined).id, coffeeSeries.id);

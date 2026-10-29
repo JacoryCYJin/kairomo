@@ -1,7 +1,13 @@
 import type { Component } from 'vue';
 import type { Session, Settings, Snapshot } from '../ipc/types';
+/** Host-owned full-window dimensions; each theme chooses its own painted bounds. */
+export interface ThemeCanvasSize {
+  readonly width: number;
+  readonly height: number;
+}
 /** Theme visuals only read state. Prepared/failed events coordinate first display. */
 export interface TimerVisualProps {
+  canvas?: ThemeCanvasSize;
   state: Snapshot;
   records: Session[];
   dark?: boolean;

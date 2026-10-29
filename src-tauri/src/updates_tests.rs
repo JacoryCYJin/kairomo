@@ -4,6 +4,53 @@ use std::io::{Read, Write};
 use tauri_plugin_updater::UpdaterExt;
 use timer_core::{Phase, Repository};
 
+// Run explicitly: this hits the real public HTTPS endpoints, but never installs.
+#[test]
+#[ignore = "requires public GitHub HTTPS access"]
+fn public_https_discovery_and_manifest_check() {
+    tauri::async_runtime::block_on(async {
+        let (version, endpoint) = super::discover_beta_manifest()
+            .await
+            .expect("production release discovery must complete")
+            .expect("a published beta manifest must exist");
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        context
+            .config_mut()
+            .plugins
+            .0
+            .insert("updater".into(), config["plugins"]["updater"].clone());
+        // Ensure a newer release is available without changing any installed app.
+        context.package_info_mut().version = semver::Version::new(0, 0, 0);
+        let app = tauri::test::mock_builder()
+            .plugin(
+                tauri_plugin_updater::Builder::new()
+                    .pubkey(include_str!("../updater.pub").trim())
+                    .build(),
+            )
+            .build(context)
+            .unwrap();
+        let update = app
+            .updater_builder()
+            .endpoints(vec![endpoint.parse().unwrap()])
+            .unwrap()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap()
+            .check()
+            .await
+            .expect("public manifest check must complete")
+            .expect("published beta must be available to the isolated old-version fixture");
+        assert_eq!(update.version, version.to_string());
+        assert_eq!(update.download_url.scheme(), "https");
+        println!(
+            "Public HTTPS discovery and manifest check: {}",
+            update.version
+        );
+    });
+}
+
 #[test]
 fn signed_update_checks_downloads_installs_and_retains_data_in_an_isolated_app() {
     let fixture: serde_json::Value =

@@ -7,6 +7,7 @@ use std::{sync::Mutex, time::Duration};
 use tauri::{Emitter, Manager};
 
 pub fn run() {
+    updates::initialize_tls();
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());

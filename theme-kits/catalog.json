@@ -49,6 +49,48 @@
           "legacyField": "bean_range"
         }
       }
+    },
+    "snow-mountain": {
+      "name": {
+        "zh-CN": "雪山攀登",
+        "zh-TW": "雪山攀登",
+        "en-US": "Snow Ascent",
+        "ja-JP": "雪山登山"
+      },
+      "rest": {
+        "light": {
+          "ink": "#344F69",
+          "muted": "#667C92",
+          "selected": "#E5EDF5",
+          "hover": "#D6E3EF",
+          "line": "#D8E3ED",
+          "background": "#FFFFFF",
+          "layers": ["#D8E6F2", "#C4D7E8", "#486580"]
+        },
+        "dark": {
+          "ink": "#D4E0EE",
+          "muted": "#9EB5CD",
+          "selected": "#34495F",
+          "hover": "#405770",
+          "line": "#3C5066",
+          "background": "#212121",
+          "layers": ["#34495F", "#536D89", "#9EB5CD"]
+        }
+      },
+      "menu": {
+        "restIcon": "snow-mountain/rest.png",
+        "overtime": {
+          "light": {
+            "background": "#E8F0F8",
+            "ink": "#344F69"
+          },
+          "dark": {
+            "background": "#293D53",
+            "ink": "#D4E0EE"
+          }
+        }
+      },
+      "options": {}
     }
   }
 }
