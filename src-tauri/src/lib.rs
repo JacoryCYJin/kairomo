@@ -93,6 +93,7 @@ pub fn run() {
             commands::save_theme_options,
             commands::sync_window_appearance,
             commands::delete_session,
+            commands::clear_sessions,
             commands::correct_session,
             commands::export_csv,
             updates::release_info,

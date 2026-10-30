@@ -128,6 +128,16 @@ export function useKairomo() {
       await refresh();
     });
   }
+  async function clearRecords(): Promise<boolean> {
+    if (!ready.value || busy.value) return false;
+    let cleared = false;
+    await operate(async () => {
+      await api.clearRecords();
+      records.value = [];
+      cleared = true;
+    });
+    return cleared;
+  }
   async function exportRecords() {
     await operate(async () => {
       if (await api.export()) notice.value = copy.value.exported;
@@ -137,6 +147,11 @@ export function useKairomo() {
     if (!desktop) return;
     try {
       const subscriptions = await Promise.all([
+        api.onRecordsChanged(() => {
+          void refresh().catch(() => {
+            error.value = copy.value.error;
+          });
+        }),
         api.onSnapshot((s) => {
           const changed = state.value.current?.id !== s.current?.id;
           apply(s);
@@ -214,6 +229,7 @@ export function useKairomo() {
     beanRange: (range: Settings['bean_range']) => saveSetting(() => api.beanRange(range)),
     phrases: (phrases: Settings['phrases']) => saveSetting(() => api.phrases(phrases)),
     remove,
+    clearRecords,
     correct,
     exportRecords,
     todayFocus,

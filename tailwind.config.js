@@ -19,6 +19,8 @@ export default {
           'rest',
           'danger',
           'danger-soft',
+          'dialog-confirm',
+          'dialog-confirm-ink',
         ].map((name) => [name, `var(--${name})`]),
       ),
       fontFamily: {

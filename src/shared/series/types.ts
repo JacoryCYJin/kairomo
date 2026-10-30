@@ -17,6 +17,10 @@ export interface RestVisual {
 export interface SeriesDefinition {
   readonly id: SeriesId;
   readonly name: SeriesName;
+  readonly dialogConfirm: {
+    readonly light: { readonly background: string; readonly ink: string };
+    readonly dark: { readonly background: string; readonly ink: string };
+  };
   readonly rest: RestVisual;
   readonly focus?: RestVisual;
 }

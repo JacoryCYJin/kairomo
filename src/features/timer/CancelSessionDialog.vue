@@ -82,7 +82,7 @@ defineExpose({ open });
         {{ copy.keepSession }}
       </button>
       <button
-        class="button danger min-w-20 !min-h-8 !px-3 !py-1.5"
+        class="button dialog-confirm min-w-20 !min-h-8 !px-3 !py-1.5"
         :disabled="busy || !expectedId"
         @click="confirm"
       >

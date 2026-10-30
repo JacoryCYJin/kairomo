@@ -92,6 +92,10 @@ impl Repository for SqliteRepository {
         }
         Ok(())
     }
+    fn clear_sessions(&mut self) -> Result<(), Self::Error> {
+        self.connection.execute("DELETE FROM sessions", [])?;
+        Ok(())
+    }
     fn update_session(&mut self, s: &Session) -> Result<(), Self::Error> {
         if self.connection.execute(
             "UPDATE sessions SET data=?1 WHERE id=?2",
@@ -110,6 +114,65 @@ mod tests {
     use timer_core::Engine;
     fn db() -> SqliteRepository {
         SqliteRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+    #[test]
+    fn clear_history_preserves_checkpoint_and_is_durable_and_repeatable() {
+        let path = std::env::temp_dir().join(format!(
+            "kairomo-clear-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut repo = SqliteRepository::open(&path).unwrap();
+        let mut engine = Engine::default();
+        engine.start("saved".into(), "Read".into(), 1000).unwrap();
+        engine.advance(60_000, 61_000);
+        let record = engine.finish(61_000).unwrap();
+        engine
+            .start("current".into(), "Write".into(), 62_000)
+            .unwrap();
+        engine.state.settings.focus_minutes = 35;
+        repo.persist(&engine.state, &[record]).unwrap();
+        let checkpoint = serde_json::to_value(&engine.state).unwrap();
+        repo.clear_sessions().unwrap();
+        repo.clear_sessions().unwrap();
+        assert!(repo.sessions().unwrap().is_empty());
+        drop(repo);
+        let mut reopened = SqliteRepository::open(&path).unwrap();
+        assert!(reopened.sessions().unwrap().is_empty());
+        assert_eq!(
+            serde_json::to_value(reopened.load_checkpoint().unwrap().unwrap()).unwrap(),
+            checkpoint
+        );
+        // A later checkpoint save must not resurrect deleted history.
+        reopened.persist(&engine.state, &[]).unwrap();
+        assert!(reopened.sessions().unwrap().is_empty());
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn failed_clear_is_atomic_and_preserves_checkpoint() {
+        let mut repo = db();
+        let mut engine = Engine::default();
+        let mut records = Vec::new();
+        for id in ["one", "two"] {
+            engine.start(id.into(), "Read".into(), 1000).unwrap();
+            engine.advance(60_000, 61_000);
+            records.push(engine.finish(61_000).unwrap());
+        }
+        repo.persist(&engine.state, &records).unwrap();
+        let checkpoint = serde_json::to_value(repo.load_checkpoint().unwrap()).unwrap();
+        repo.connection.execute_batch(
+            "CREATE TRIGGER reject_clear BEFORE DELETE ON sessions WHEN OLD.id='two' BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;"
+        ).unwrap();
+        assert!(repo.clear_sessions().is_err());
+        assert_eq!(repo.sessions().unwrap().len(), 2);
+        assert_eq!(
+            serde_json::to_value(repo.load_checkpoint().unwrap()).unwrap(),
+            checkpoint
+        );
     }
     #[test]
     fn rest_and_unfinished_sessions_never_enter_history_but_rest_checkpoint_recovers() {

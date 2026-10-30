@@ -2,6 +2,10 @@
   "default": "coffee",
   "themes": {
     "coffee": {
+      "dialogConfirm": {
+        "light": { "background": "#765135", "ink": "#FFFFFF" },
+        "dark": { "background": "#EBC398", "ink": "#302119" }
+      },
       "name": {
         "zh-CN": "咖啡",
         "zh-TW": "咖啡",
@@ -51,6 +55,10 @@
       }
     },
     "snow-mountain": {
+      "dialogConfirm": {
+        "light": { "background": "#344F69", "ink": "#FFFFFF" },
+        "dark": { "background": "#9EB5CD", "ink": "#172536" }
+      },
       "name": {
         "zh-CN": "雪山攀登",
         "zh-TW": "雪山攀登",

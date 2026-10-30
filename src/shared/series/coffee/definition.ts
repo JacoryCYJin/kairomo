@@ -14,6 +14,7 @@ const coffeeRest = {
 export const coffeeSeries = {
   id: 'coffee',
   name: metadata.name,
+  dialogConfirm: metadata.dialogConfirm,
   collection: { insideCapacity: 80, displayLimit: 120 },
   rest: coffeeRest,
   // Product thresholds adapted from the City → Vienna development segment, anchored at 60 min.

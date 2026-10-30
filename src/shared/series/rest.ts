@@ -24,6 +24,13 @@ export function visualThemeStyle(
 export function seriesThemeStyle(id: string, dark: boolean, resting: boolean) {
   return visualThemeStyle(seriesFor(id), dark, resting);
 }
+export function dialogConfirmStyle(id: string, dark: boolean): Record<string, string> {
+  const palette = seriesFor(id).dialogConfirm[dark ? 'dark' : 'light'];
+  return {
+    '--dialog-confirm': palette.background,
+    '--dialog-confirm-ink': palette.ink,
+  };
+}
 /** Compatibility helper for callers rendering a rest-only preview. */
 export function restThemeStyle(id: string, dark: boolean): Record<string, string> {
   return seriesThemeStyle(id, dark, true)!;

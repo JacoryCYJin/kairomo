@@ -5,6 +5,7 @@ import ThemeCanvas from '../shared/series/ThemeCanvas.vue';
 import CanvasFixture from './CanvasFixture.vue';
 import { timerLayout } from '../features/timer/timerLayout';
 import { availableSeries, defaultSeriesId } from '../shared/series/catalog';
+import { dialogConfirmStyle } from '../shared/series/rest';
 import SeriesCollection from '../shared/series/SeriesCollection.vue';
 import SettingsView from '../features/settings/SettingsView.vue';
 import HistoryView from '../features/history/HistoryView.vue';
@@ -107,6 +108,7 @@ const caption = computed(() =>
 <template>
   <main
     class="mx-auto max-w-[1200px] p-6"
+    :style="dialogConfirmStyle(settings.visual_series, dark)"
     :class="{ 'proof-still': query.get('motion') === 'still' }"
   >
     <header class="mb-5 flex flex-wrap items-center gap-3 border-b border-line pb-4 text-xs">
@@ -213,6 +215,12 @@ const caption = computed(() =>
         v-else
         :settings="settings"
         :busy="false"
+        :clear-records="
+          async () => {
+            count = 0;
+            return true;
+          }
+        "
         @save="settings = { ...settings, ...$event }"
         @preference="settings = { ...settings, ...$event }"
         @phrases="settings = { ...settings, phrases: $event }"

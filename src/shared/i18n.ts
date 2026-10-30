@@ -2,6 +2,19 @@ import { computed, ref } from 'vue';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export const locale = ref<AppLocale>('zh-CN');
 const zh = {
+  historySettings: '历史记录',
+  completedFocusRecords: '专注记录',
+  clearHistory: '清空历史记录',
+  clearRecordsAction: '清空记录',
+  clearRecords: '清空记录',
+  clearRecordsHint: '保留当前计时和所有设置',
+  confirmClearRecords: '清空全部历史记录？',
+  clearRecordsWarning:
+    '所有历史专注记录及对应统计、咖啡豆将被删除，无法撤销。当前计时和设置会保留。',
+  clearingRecords: '正在清空…',
+  keepRecords: '我再想想',
+  recordsCleared: '记录已清空',
+  clearRecordsError: '清空失败，请重试。',
   timerLayoutError: '无法调整计时窗口，请重新打开小窗。',
   editPhraseLibrary: '编辑短语库',
   phraseCount: '{count} 条短语',
@@ -230,6 +243,19 @@ const zh = {
   hourShort: '时',
 };
 const en: typeof zh = {
+  historySettings: 'History',
+  completedFocusRecords: 'Focus records',
+  clearHistory: 'Clear history',
+  clearRecordsAction: 'Clear records',
+  clearRecords: 'Clear records',
+  clearRecordsHint: 'Your current timer and all settings will be kept',
+  confirmClearRecords: 'Clear all history?',
+  clearRecordsWarning:
+    'All past focus sessions and their statistics and coffee beans will be permanently deleted. Your current timer and settings will be kept.',
+  clearingRecords: 'Clearing…',
+  keepRecords: 'Keep records',
+  recordsCleared: 'Records cleared',
+  clearRecordsError: 'Could not clear records. Please try again.',
   timerLayoutError: 'Unable to resize the timer. Please reopen the timer window.',
   editPhraseLibrary: 'Edit library',
   phraseCount: '{count} messages',
@@ -467,6 +493,19 @@ const en: typeof zh = {
   hourShort: 'h',
 };
 const ja: typeof zh = {
+  historySettings: '履歴',
+  completedFocusRecords: '集中記録',
+  clearHistory: '履歴を消去',
+  clearRecordsAction: '記録を消去',
+  clearRecords: '記録を消去',
+  clearRecordsHint: '現在のタイマーとすべての設定は保持されます',
+  confirmClearRecords: 'すべての履歴を消去しますか？',
+  clearRecordsWarning:
+    '過去の集中記録と対応する統計・コーヒー豆がすべて削除され、元に戻せません。現在のタイマーと設定は保持されます。',
+  clearingRecords: '消去中…',
+  keepRecords: '記録を残す',
+  recordsCleared: '記録を消去しました',
+  clearRecordsError: '記録を消去できませんでした。もう一度お試しください。',
   timerLayoutError:
     'タイマーウインドウのサイズを変更できませんでした。ウインドウを開き直してください。',
   editPhraseLibrary: 'ライブラリを編集',
@@ -702,6 +741,19 @@ const ja: typeof zh = {
   hourShort: '時間',
 };
 const tw: typeof zh = {
+  historySettings: '歷史紀錄',
+  completedFocusRecords: '專注紀錄',
+  clearHistory: '清空歷史紀錄',
+  clearRecordsAction: '清空紀錄',
+  clearRecords: '清空紀錄',
+  clearRecordsHint: '保留目前的計時和所有設定',
+  confirmClearRecords: '要清空全部歷史紀錄嗎？',
+  clearRecordsWarning:
+    '所有歷史專注紀錄及對應統計、咖啡豆將被刪除，無法復原。目前的計時和設定會保留。',
+  clearingRecords: '正在清空…',
+  keepRecords: '我再想想',
+  recordsCleared: '紀錄已清空',
+  clearRecordsError: '清空失敗，請重試。',
   timerLayoutError: '無法調整計時視窗，請重新開啟小視窗。',
   editPhraseLibrary: '編輯短語庫',
   phraseCount: '{count} 則短語',

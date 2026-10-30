@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { coffeeSeries } from './coffee/definition.ts';
-import { remainingRestFraction, restThemeStyle, visualThemeStyle } from './rest.ts';
+import { availableSeries } from './catalog.ts';
+import {
+  dialogConfirmStyle,
+  remainingRestFraction,
+  restThemeStyle,
+  visualThemeStyle,
+} from './rest.ts';
 
 test('rest volume covers ready, partial, paused/reopened and overdue snapshots without mutating time', () => {
   const session = Object.freeze({ duration_ms: 300_000, target_ms: 600_000 });
@@ -23,6 +29,18 @@ function luminance(hex) {
     .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
   return channels.reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
 }
+
+test('every kit provides readable dialog confirmations in light and dark appearances', () => {
+  for (const series of availableSeries) {
+    for (const dark of [false, true]) {
+      const tokens = dialogConfirmStyle(series.id, dark);
+      const [a, b] = [tokens['--dialog-confirm'], tokens['--dialog-confirm-ink']]
+        .map(luminance)
+        .sort((a, b) => b - a);
+      assert.ok((a + 0.05) / (b + 0.05) >= 4.5, `${series.id}, dark=${dark}`);
+    }
+  }
+});
 
 test('series text remains readable above and below every liquid surface in both themes', () => {
   const styles = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
