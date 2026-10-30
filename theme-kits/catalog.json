@@ -78,15 +78,37 @@
         }
       },
       "menu": {
+        "focusIcon": "snow-mountain/focus.png",
         "restIcon": "snow-mountain/rest.png",
-        "overtime": {
+        "overtimeIcon": "snow-mountain/overtime.png",
+        "focus": {
           "light": {
-            "background": "#E8F0F8",
+            "background": "#E5EDF5",
             "ink": "#344F69"
           },
           "dark": {
-            "background": "#293D53",
+            "background": "#34495F",
             "ink": "#D4E0EE"
+          }
+        },
+        "rest": {
+          "light": {
+            "background": "#172536",
+            "ink": "#CFDCEB"
+          },
+          "dark": {
+            "background": "#252A30",
+            "ink": "#C7D0DA"
+          }
+        },
+        "overtime": {
+          "light": {
+            "background": "#F3F5F7",
+            "ink": "#626D79"
+          },
+          "dark": {
+            "background": "#172536",
+            "ink": "#CFDCEB"
           }
         }
       },

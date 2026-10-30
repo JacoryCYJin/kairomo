@@ -26,7 +26,10 @@ extern "C" {
         focus_len: usize,
         rest: *const u8,
         rest_len: usize,
+        overtime: *const u8,
+        overtime_len: usize,
         palette: *const u8,
+        focus_background: bool,
     );
 }
 
@@ -44,13 +47,15 @@ pub fn update_tray(
     };
     let theme = timer_core::themes::theme(theme_id);
     let rest_icon = theme_icons::rest_icon(theme_id);
+    let focus =
+        theme_icons::focus_icon(theme_id).unwrap_or(include_bytes!("../../../icons/tray.png"));
+    let overtime = theme_icons::overtime_icon(theme_id).unwrap_or(&[]);
     let palette = crate::platform::theme_palette::menu_palette(theme);
     let Ok(label) = std::ffi::CString::new(label) else {
         return;
     };
     let _ = tray.with_inner_tray_icon(move |tray| {
         if let Some(item) = tray.ns_status_item() {
-            let focus = include_bytes!("../../../icons/tray.png");
             let rest = rest_icon;
             // SAFETY: with_inner_tray_icon runs on the main thread. The retained
             // status item and CString outlive this synchronous AppKit call.
@@ -64,7 +69,10 @@ pub fn update_tray(
                     focus.len(),
                     rest.as_ptr(),
                     rest.len(),
-                    palette.as_ptr(),
+                    overtime.as_ptr(),
+                    overtime.len(),
+                    palette.colors.as_ptr(),
+                    palette.focus_background,
                 );
             }
         }

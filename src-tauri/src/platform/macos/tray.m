@@ -37,9 +37,27 @@ static NSColor *kairomo_theme_color(NSData *palette, NSUInteger offset) {
 static CGFloat kairomo_tray_width(BOOL hours) {
     NSFont *font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
     NSString *sample = hours ? @"00:00:00" : @"00:00";
-    // Icon, gap, and margins stay identical; only the time format changes width.
-    return 2 * kairomoTrayPadding + kairomoTrayIconWidth + kairomoTrayGap
-        + ceil([sample sizeWithAttributes:@{NSFontAttributeName:font}].width);
+    NSAttributedString *text = [[NSAttributedString alloc] initWithString:sample
+        attributes:@{NSFontAttributeName:font}];
+    CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)text);
+    CGFloat origin = kairomoTrayPadding + kairomoTrayIconWidth + kairomoTrayGap
+        - CGRectGetMinX(CTLineGetImageBounds(line, NULL));
+    CFRelease(line);
+    CGFloat minimum = CGFLOAT_MAX, maximum = 0;
+    for (int digit = 0; digit < 10; digit++) {
+        NSString *label = [[sample substringToIndex:sample.length - 1]
+            stringByAppendingFormat:@"%d", digit];
+        NSAttributedString *text = [[NSAttributedString alloc] initWithString:label
+            attributes:@{NSFontAttributeName:font}];
+        CTLineRef variant = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)text);
+        CGFloat right = CGRectGetMaxX(CTLineGetImageBounds(variant, NULL));
+        CFRelease(variant);
+        minimum = MIN(minimum, right);
+        maximum = MAX(maximum, right);
+    }
+    // One stable width per format. Center the natural trailing digit bearings
+    // around the 5pt visible inset instead of retaining the font's blank advance.
+    return origin + (minimum + maximum) / 2 + kairomoTrayPadding;
 }
 
 // Decorative content only: the original status button and tray target continue
@@ -50,6 +68,10 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 @property(nonatomic) NSInteger restAppearance;
 @property(nonatomic, strong) NSImage *focusIcon;
 @property(nonatomic, strong) NSImage *restIcon;
+@property(nonatomic, strong) NSImage *overtimeIcon;
+@property(nonatomic, strong) NSData *focusIconData;
+@property(nonatomic, strong) NSData *overtimeIconData;
+@property(nonatomic) BOOL focusBackground;
 @property(nonatomic, strong) NSData *restIconData;
 @property(nonatomic, strong) NSData *palette;
 @end
@@ -62,21 +84,15 @@ static CGFloat kairomo_tray_width(BOOL hours) {
     self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-    BOOL dark = [[self.effectiveAppearance bestMatchFromAppearancesWithNames:
+    // Explicit appearance follows app settings. System mode follows the app,
+    // even when the desktop wallpaper makes the menu bar look different.
+    BOOL appDark = [[NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:
         @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
+    BOOL dark = self.restAppearance == 2 || (self.restAppearance == 0 && appDark);
     NSColor *color = NSColor.labelColor;
     NSColor *background = nil;
-    if (self.style == 1) {
-        // The menu bar can have a different effective appearance from app windows.
-        // Resolve system mode from the app, matching the timer's theme context.
-        BOOL appDark = [[NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:
-            @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
-        BOOL restDark = self.restAppearance == 2 || (self.restAppearance == 0 && appDark);
-        NSUInteger offset = restDark ? 12 : 0;
-        background = kairomo_theme_color(self.palette, offset);
-        color = kairomo_theme_color(self.palette, offset + 3);
-    } else if (self.style == 2) {
-        NSUInteger offset = dark ? 18 : 6;
+    if (self.style != 0 || self.focusBackground) {
+        NSUInteger offset = (dark ? 18 : 0) + self.style * 6;
         background = kairomo_theme_color(self.palette, offset);
         color = kairomo_theme_color(self.palette, offset + 3);
     }
@@ -87,6 +103,13 @@ static CGFloat kairomo_tray_width(BOOL hours) {
         [[NSBezierPath bezierPathWithRoundedRect:
             NSMakeRect(0, centerY - 10, self.bounds.size.width, 20)
             xRadius:5 yRadius:5] fill];
+    } else {
+        [color setStroke];
+        NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(0.5, centerY - 9.5, self.bounds.size.width - 1, 19)
+            xRadius:4.5 yRadius:4.5];
+        outline.lineWidth = 1;
+        [outline stroke];
     }
     NSFont *font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
     NSDictionary *attributes = @{NSFontAttributeName:font, NSForegroundColorAttributeName:color};
@@ -96,8 +119,7 @@ static CGFloat kairomo_tray_width(BOOL hours) {
     CFRelease(referenceLine);
     // These anchors depend only on the format, never the current glyphs or state.
     CGFloat timeX = kairomoTrayPadding + kairomoTrayIconWidth + kairomoTrayGap;
-    CGFloat iconRight = kairomoTrayPadding + kairomoTrayIconWidth;
-    if (self.style == 2) {
+    if (self.style == 2 && !self.overtimeIcon) {
         NSFont *sampleFont = [NSFont systemFontOfSize:25 weight:NSFontWeightRegular];
         NSAttributedString *sample = [[NSAttributedString alloc] initWithString:@"+"
             attributes:@{NSFontAttributeName:sampleFont}];
@@ -112,21 +134,22 @@ static CGFloat kairomo_tray_width(BOOL hours) {
         CGContextRef context = NSGraphicsContext.currentContext.CGContext;
         CGContextSaveGState(context);
         CGContextSetTextMatrix(context, CGAffineTransformIdentity);
-        CGContextSetTextPosition(context, iconRight - CGRectGetMaxX(bounds), centerY - CGRectGetMidY(bounds));
+        CGContextSetTextPosition(context, kairomoTrayPadding - CGRectGetMinX(bounds), centerY - CGRectGetMidY(bounds));
         CTLineDraw(plusLine, context);
         CGContextRestoreGState(context);
         CFRelease(plusLine);
     } else {
-        NSImage *source = self.style == 1 ? self.restIcon : self.focusIcon;
+        NSImage *source = self.style == 1 ? self.restIcon :
+            (self.style == 2 ? self.overtimeIcon : self.focusIcon);
         NSImage *icon = [NSImage imageWithSize:source.size flipped:NO drawingHandler:^BOOL(NSRect rect) {
             [source drawInRect:rect];
             [color setFill];
             NSRectFillUsingOperation(rect, NSCompositingOperationSourceAtop);
             return YES;
         }];
-        // Original marks keep their scale. Their visible right edge shares a
-        // fixed anchor so a smaller plus cannot create a larger internal gap.
-        [icon drawInRect:NSMakeRect(iconRight - icon.size.width,
+        // Cropped visible ink starts at the same outer inset as the digits end.
+        // Preserve the icon's scale and the fixed 15pt slot / digit anchor.
+        [icon drawInRect:NSMakeRect(kairomoTrayPadding,
             centerY - icon.size.height / 2, icon.size.width, icon.size.height)];
     }
     NSAttributedString *text = [[NSAttributedString alloc] initWithString:self.time attributes:attributes];
@@ -143,7 +166,9 @@ static CGFloat kairomo_tray_width(BOOL hours) {
 
 void kairomo_update_tray(void *pointer, const char *label, int style, int restAppearance,
                          const unsigned char *focus, size_t focusLength,
-                         const unsigned char *rest, size_t restLength, const unsigned char *palette) {
+                         const unsigned char *rest, size_t restLength,
+                         const unsigned char *overtime, size_t overtimeLength,
+                         const unsigned char *palette, bool focusBackground) {
     NSStatusItem *item = (__bridge NSStatusItem *)pointer;
     NSStatusBarButton *button = item.button;
     if (!button) return;
@@ -153,14 +178,29 @@ void kairomo_update_tray(void *pointer, const char *label, int style, int restAp
     KairomoTrayContent *content = objc_getAssociatedObject(item, &contentKey);
     if (!content) {
         content = [[KairomoTrayContent alloc] initWithFrame:NSMakeRect(0, 0, width, button.bounds.size.height)];
-        content.focusIcon = kairomo_trim_tray_icon([NSData dataWithBytes:focus length:focusLength]);
         content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         button.title = @"";
         button.image = nil;
         [button addSubview:content positioned:NSWindowBelow relativeTo:nil];
         objc_setAssociatedObject(item, &contentKey, content, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    NSData *nextPalette = [NSData dataWithBytes:palette length:24];
+    NSData *nextPalette = [NSData dataWithBytes:palette length:36];
+    NSData *nextFocus = [NSData dataWithBytes:focus length:focusLength];
+    NSData *nextOvertime = [NSData dataWithBytes:overtime length:overtimeLength];
+    if (![content.focusIconData isEqualToData:nextFocus]) {
+        content.focusIconData = nextFocus;
+        content.focusIcon = kairomo_trim_tray_icon(nextFocus);
+        content.needsDisplay = YES;
+    }
+    if (![content.overtimeIconData isEqualToData:nextOvertime]) {
+        content.overtimeIconData = nextOvertime;
+        content.overtimeIcon = overtimeLength ? kairomo_trim_tray_icon(nextOvertime) : nil;
+        content.needsDisplay = YES;
+    }
+    if (content.focusBackground != focusBackground) {
+        content.focusBackground = focusBackground;
+        content.needsDisplay = YES;
+    }
     NSData *nextIcon = [NSData dataWithBytes:rest length:restLength];
     if (![content.restIconData isEqualToData:nextIcon]) {
         content.restIconData = nextIcon;
