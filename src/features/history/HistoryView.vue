@@ -324,7 +324,7 @@ function submit() {
         <div class="modal-actions">
           <button class="button secondary" @click="close">{{ copy.cancel }}</button
           ><button
-            class="button danger"
+            class="button dialog-confirm"
             @click="
               emit('remove', deleting.id);
               close();

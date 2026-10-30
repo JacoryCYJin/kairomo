@@ -12,7 +12,7 @@ import { startWindowDrag, windowTitle } from '../shared/ipc/window';
 import { useKairomo } from './useKairomo';
 import { popupStartup } from './popupStartup';
 import { updates } from '../shared/ipc/updates';
-import { seriesThemeStyle } from '../shared/series/rest';
+import { dialogConfirmStyle, seriesThemeStyle } from '../shared/series/rest';
 const auxiliary = new URLSearchParams(window.location.search).has('view');
 const view = ref<'history' | 'settings'>('settings');
 const shell = ref<HTMLElement | null>(null);
@@ -50,6 +50,7 @@ const dark = computed(
 const resting = computed(() => !auxiliary && state.value.current?.kind === 'break');
 const visualSeries = computed(() => state.value.settings.visual_series);
 const restStyle = computed(() => seriesThemeStyle(visualSeries.value, dark.value, resting.value));
+const confirmStyle = computed(() => dialogConfirmStyle(visualSeries.value, dark.value));
 watch(
   dark,
   (value) => {
@@ -216,7 +217,7 @@ onUnmounted(() => {
         : 'timer-shell group relative h-screen select-none overflow-auto bg-paper focus:outline-none'
     "
     :tabindex="auxiliary ? undefined : -1"
-    :style="restStyle"
+    :style="[restStyle, confirmStyle]"
     @mousedown="drag"
   >
     <header
@@ -336,6 +337,7 @@ onUnmounted(() => {
         <SettingsView
           v-else
           :settings="state.settings"
+          :clear-records="k.clearRecords"
           :busy="busy || !ready"
           @save="k.configure"
           @preference="k.preferences"

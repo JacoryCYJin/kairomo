@@ -148,6 +148,18 @@ pub fn delete_session(state: State<'_, AppState>, id: String) -> Result<(), Stri
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
+pub fn clear_sessions(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .repository
+        .clear_sessions()
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("records:changed", ());
+    Ok(())
+}
+#[tauri::command]
 pub fn correct_session(
     state: State<'_, AppState>,
     id: String,

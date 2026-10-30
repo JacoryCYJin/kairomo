@@ -6,7 +6,12 @@ import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import UpdateSettings from './UpdateSettings.vue';
 import PhraseSettings from './PhraseSettings.vue';
 import ThemeSettings from './ThemeSettings.vue';
-const props = defineProps<{ settings: Settings; busy: boolean }>();
+import RecordSettings from './RecordSettings.vue';
+const props = defineProps<{
+  settings: Settings;
+  busy: boolean;
+  clearRecords: () => Promise<boolean>;
+}>();
 const emit = defineEmits<{
   save: [
     Partial<Pick<Settings, 'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode'>>,
@@ -230,6 +235,9 @@ function choosePreference(key: keyof Preferences, value: string) {
       @save="emit('phrases', $event)"
       @page="phrasePage"
     />
+    <div v-show="!libraryOpen">
+      <RecordSettings :busy="busy" :clear-records="clearRecords" />
+    </div>
     <UpdateSettings v-show="!libraryOpen" />
   </section>
 </template>

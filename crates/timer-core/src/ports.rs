@@ -6,5 +6,6 @@ pub trait Repository {
     fn persist(&mut self, state: &Snapshot, completed: &[Session]) -> Result<(), Self::Error>;
     fn sessions(&self) -> Result<Vec<Session>, Self::Error>;
     fn delete_session(&mut self, id: &str) -> Result<(), Self::Error>;
+    fn clear_sessions(&mut self) -> Result<(), Self::Error>;
     fn update_session(&mut self, session: &Session) -> Result<(), Self::Error>;
 }

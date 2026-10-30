@@ -39,6 +39,8 @@ export const api = {
       visualSeries: preferences.visual_series,
     }),
   delete: (id: string) => invoke<void>('delete_session', { id }),
+  clearRecords: () => invoke<void>('clear_sessions'),
+  onRecordsChanged: (handler: () => void) => listen('records:changed', handler),
   correct: (id: string, title: string, minutes: number) =>
     invoke<void>('correct_session', { id, title, minutes }),
   async export() {
