@@ -3,7 +3,7 @@ members = ["crates/timer-core", "crates/timer-storage", "src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 edition = "2021"
 rust-version = "1.90"
 

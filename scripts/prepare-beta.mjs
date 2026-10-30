@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    '新增雪山攀登主题；主题画布覆盖整个小窗，各主题独立安排图形，咖啡保留原有效果；修复雪山休息画面白边，以及更新检查首次 HTTPS 初始化和超时重试。',
+    '更新雪山菜单栏：倒计时冰镐、休息营帐、正计时三角旗，三态独立浅深配色；透明菜单栏增加文字同色边框，平衡左右留白；雪山记录零时长显示“尚未启程”，调整统计文字与日期间距。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

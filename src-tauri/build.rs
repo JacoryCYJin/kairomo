@@ -6,22 +6,48 @@ fn main() {
         serde_json::from_str(&std::fs::read_to_string(root.join("catalog.json")).unwrap()).unwrap();
     let default = catalog["default"].as_str().unwrap();
     assert!(catalog["themes"].get(default).is_some());
-    let mut generated = String::from("pub fn rest_icon(id: &str) -> &'static [u8] { match id {\n");
-    for (id, theme) in catalog["themes"].as_object().unwrap() {
-        let relative = std::path::Path::new(theme["menu"]["restIcon"].as_str().unwrap());
-        assert!(relative
-            .components()
-            .all(|c| matches!(c, std::path::Component::Normal(_))));
-        let icon = root
-            .join(relative)
-            .canonicalize()
-            .expect("missing theme menu icon");
+    let mut generated = String::new();
+    for (function, field, optional) in [
+        ("rest_icon", "restIcon", false),
+        ("focus_icon", "focusIcon", true),
+        ("overtime_icon", "overtimeIcon", true),
+    ] {
+        let result_type = if optional {
+            "Option<&'static [u8]>"
+        } else {
+            "&'static [u8]"
+        };
         generated.push_str(&format!(
-            "{id:?} => include_bytes!({:?}),\n",
-            icon.to_str().unwrap()
+            "pub fn {function}(id: &str) -> {result_type} {Q} match id {Q}\n",
+            Q = "{"
         ));
+        for (id, theme) in catalog["themes"].as_object().unwrap() {
+            let Some(path) = theme["menu"][field].as_str() else {
+                assert!(optional, "missing required menu icon");
+                generated.push_str(&format!("{id:?} => None,\n"));
+                continue;
+            };
+            let relative = std::path::Path::new(path);
+            assert!(relative
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_))));
+            let icon = root
+                .join(relative)
+                .canonicalize()
+                .expect("missing theme menu icon");
+            let bytes = format!(
+                "include_bytes!({:?}) as &'static [u8]",
+                icon.to_str().unwrap()
+            );
+            let value = if optional {
+                format!("Some({bytes})")
+            } else {
+                bytes
+            };
+            generated.push_str(&format!("{id:?} => {value},\n"));
+        }
+        generated.push_str(&format!("_ => {function}({default:?}), }} }}\n"));
     }
-    generated.push_str(&format!("_ => rest_icon({default:?}), }} }}\n"));
     std::fs::write(
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("theme_icons.rs"),
         generated,

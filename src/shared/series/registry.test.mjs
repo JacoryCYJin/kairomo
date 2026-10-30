@@ -78,12 +78,18 @@ test('shared catalog has complete names, valid palettes and packaged native asse
     for (const mode of ['light', 'dark']) {
       for (const field of ['ink', 'muted', 'selected', 'hover', 'line', 'background'])
         assert.match(theme.rest[mode][field], /^#[0-9a-f]{6}$/i);
-      for (const field of ['ink', 'background'])
-        assert.match(theme.menu.overtime[mode][field], /^#[0-9a-f]{6}$/i);
+      for (const state of ['focus', 'rest', 'overtime']) {
+        if (!theme.menu[state]) continue;
+        for (const field of ['ink', 'background'])
+          assert.match(theme.menu[state][mode][field], /^#[0-9a-f]{6}$/i);
+      }
     }
-    const icon = new URL('../../../theme-kits/' + theme.menu.restIcon, import.meta.url);
-    assert.ok(existsSync(icon));
-    assert.equal(readFileSync(icon).subarray(1, 4).toString(), 'PNG');
+    for (const field of ['focusIcon', 'restIcon', 'overtimeIcon']) {
+      if (!theme.menu[field]) continue;
+      const icon = new URL('../../../theme-kits/' + theme.menu[field], import.meta.url);
+      assert.ok(existsSync(icon));
+      assert.equal(readFileSync(icon).subarray(1, 4).toString(), 'PNG');
+    }
   }
 });
 test('feature assembly cannot import coffee geometry, workers or per-theme settings', () => {
