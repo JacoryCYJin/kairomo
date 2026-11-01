@@ -354,9 +354,10 @@ onUnmounted(() => {
     />
     <div
       v-else
-      class="details-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-none"
+      class="details-content min-h-0 flex-1 overflow-x-hidden overscroll-none"
+      :class="view === 'history' ? 'overflow-y-hidden' : 'overflow-y-auto'"
     >
-      <div class="mx-auto max-w-[820px] px-7" :class="view === 'history' ? 'pb-3' : 'pb-6'">
+      <div :class="view === 'history' ? 'h-full' : 'mx-auto max-w-[820px] px-7 pb-6'">
         <HistoryView
           v-if="view === 'history'"
           :records="records"

@@ -179,3 +179,90 @@ export function earnedBeans(records: readonly Session[], period: Period): Sessio
     )
     .sort((a, b) => a.ended_at_ms! - b.ended_at_ms! || a.id.localeCompare(b.id));
 }
+
+/** Portion of one record inside a local day, as percentages for the 24-hour timeline ruler. */
+export function daySpan(
+  startedAtMs: number,
+  endedAtMs: number | null,
+  day: Date,
+): { left: number; width: number } {
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  const dayEnd = dayStart + 86400000;
+  const from = Math.min(Math.max(startedAtMs, dayStart), dayEnd);
+  const to = Math.min(Math.max(endedAtMs ?? startedAtMs, from), dayEnd);
+  return { left: ((from - dayStart) / 86400000) * 100, width: ((to - from) / 86400000) * 100 };
+}
+
+/** Continuous timeline zoom bounds, in visible minutes. */
+export const TIMELINE_MIN_SPAN = 30;
+export const TIMELINE_MAX_SPAN = 24 * 60;
+
+/** Equal slider moves multiply the visible span, so zooming feels even at any scale. */
+export function zoomSpan(position: number): number {
+  const step = Math.min(1, Math.max(0, position));
+  return TIMELINE_MAX_SPAN * Math.pow(TIMELINE_MIN_SPAN / TIMELINE_MAX_SPAN, step);
+}
+
+/** Inverse of zoomSpan, used to place the slider thumb. */
+export function zoomPosition(spanMinutes: number): number {
+  const span = Math.min(TIMELINE_MAX_SPAN, Math.max(TIMELINE_MIN_SPAN, spanMinutes));
+  return Math.max(
+    0,
+    Math.log(span / TIMELINE_MAX_SPAN) / Math.log(TIMELINE_MIN_SPAN / TIMELINE_MAX_SPAN),
+  );
+}
+
+/** How many times wider than the viewport the full day becomes at this span. */
+export function timelineScale(spanMinutes: number): number {
+  return TIMELINE_MAX_SPAN / spanMinutes;
+}
+
+/** Pick a clock step that keeps roughly six labels inside the visible window. */
+export function timelineStepMs(spanMs: number): number {
+  const minutes = spanMs / 60000;
+  const steps = [5, 10, 15, 30, 60, 120, 180, 360];
+  return (steps.find((step) => minutes / step <= 6) ?? 720) * 60000;
+}
+
+/** Ticks aligned to the local day, limited to the visible window. */
+export function timelineTicks(
+  dayStartMs: number,
+  viewStartMs: number,
+  viewEndMs: number,
+  stepMs: number,
+): number[] {
+  if (stepMs <= 0 || viewEndMs <= viewStartMs) return [];
+  const first = dayStartMs + Math.ceil((viewStartMs - dayStartMs) / stepMs) * stepMs;
+  const ticks: number[] = [];
+  for (let tick = first; tick < viewEndMs; tick += stepMs) ticks.push(tick);
+  return ticks;
+}
+
+/** Visible part of a day for the current zoom and scroll offset. */
+export function timelineWindow(
+  dayStartMs: number,
+  dayMs: number,
+  scale: number,
+  scrollLeft: number,
+  viewportWidth: number,
+): { start: number; end: number } {
+  if (scale <= 0 || viewportWidth <= 0) return { start: dayStartMs, end: dayStartMs + dayMs };
+  const contentWidth = viewportWidth * scale;
+  const offset = Math.max(0, Math.min(scrollLeft, contentWidth - viewportWidth));
+  const start = dayStartMs + (offset / contentWidth) * dayMs;
+  return { start, end: Math.min(start + dayMs / scale, dayStartMs + dayMs) };
+}
+
+/** Scroll offset that keeps an anchor time at the center of the viewport. */
+export function timelineScrollLeft(
+  dayStartMs: number,
+  dayMs: number,
+  scale: number,
+  viewportWidth: number,
+  anchorMs: number,
+): number {
+  const contentWidth = viewportWidth * scale;
+  if (contentWidth <= viewportWidth) return 0;
+  const offset = ((anchorMs - dayStartMs) / dayMs) * contentWidth - viewportWidth / 2;
+  return Math.max(0, Math.min(offset, contentWidth - viewportWidth));
+}

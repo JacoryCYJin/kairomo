@@ -11,6 +11,8 @@ import type { SeriesId } from '../../shared/series/types';
 import HistoryCalendar from './HistoryCalendar.vue';
 import RecordTimeField from './RecordTimeField.vue';
 import HistoryRangeFilter from './HistoryRangeFilter.vue';
+import HistoryTimeline from './HistoryTimeline.vue';
+import RecordDetailPanel from './RecordDetailPanel.vue';
 import SeriesCollection from '../../shared/series/SeriesCollection.vue';
 import {
   effectiveMinutes,
@@ -30,6 +32,7 @@ import {
   totalInPeriod,
   durationInPeriod,
   earnedBeans,
+  TIMELINE_MAX_SPAN,
 } from './history';
 import type { HistoryFilter } from './history';
 const props = defineProps<{
@@ -51,6 +54,21 @@ const emit = defineEmits<{
   remove: [string];
 }>();
 const selectedTasks = ref<string[]>([]);
+const historyView = ref<'list' | 'timeline'>('list');
+const timelineSpan = ref(TIMELINE_MAX_SPAN);
+const detail = ref<Session | null>(null);
+const detailOpen = ref(false);
+const detailLeaving = ref(false);
+const listActionsVisible = computed(() => !detailOpen.value && !detailLeaving.value);
+const viewOptions = computed(() => [
+  { value: 'list' as const, title: copy.value.viewList, path: 'M4 6h16M4 12h16M4 18h16' },
+  {
+    value: 'timeline' as const,
+    title: copy.value.viewTimeline,
+    path: 'M3 12h18M6 7h5v10H6zM14 10h4v4h-4z',
+  },
+]);
+const viewIndex = computed(() => (historyView.value === 'list' ? 0 : 1));
 const taskOptions = computed(() => [
   ...(props.tasks ?? []).map((task) => ({ value: task.id, label: task.name })),
   { value: uncategorizedTask, label: copy.value.uncategorized },
@@ -65,6 +83,30 @@ watch(
 const taskRecords = computed(() => recordsForTasks(props.records, selectedTasks.value));
 const taskName = (id?: string | null) =>
   props.tasks?.find((task) => task.id === id)?.name ?? copy.value.uncategorized;
+function recordName(session: Session) {
+  return session.title || (session.task_id ? taskName(session.task_id) : copy.value.untitled);
+}
+function recordMeta(session: Session) {
+  return `${recordTime(session)}${
+    session.title && session.task_id ? ` · ${taskName(session.task_id)}` : ''
+  }`;
+}
+function openDetail(session: Session) {
+  detail.value = session;
+  detailOpen.value = true;
+}
+function fromTimeline(session: Session) {
+  historyView.value = 'list';
+  openDetail(session);
+}
+function navigateView(event: KeyboardEvent, current: number) {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+  event.preventDefault();
+  historyView.value = current === 0 ? 'timeline' : 'list';
+  (event.currentTarget as HTMLElement).parentElement
+    ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    [viewIndex.value]?.focus();
+}
 const editTask = ref<string | null>(null);
 function removeTaskFilter(id: string) {
   selectedTasks.value = selectedTasks.value.filter((value) => value !== id);
@@ -136,6 +178,18 @@ watch([editStart, editEnd, editTask], () => {
 const modal = ref<HTMLDialogElement | null>(null);
 const deleteHeading = ref<HTMLHeadingElement | null>(null);
 const loadTrigger = ref<HTMLDivElement | null>(null);
+const listScroller = ref<HTMLDivElement | null>(null);
+const historyRoot = ref<HTMLElement | null>(null);
+const recordsVisible = ref(false);
+const recordsExpanded = ref(false);
+const coverRadius = ref(16);
+function updateCover() {
+  const root = historyRoot.value;
+  if (!root) return;
+  recordsVisible.value = root.scrollTop > 0;
+  recordsExpanded.value = root.scrollTop >= root.clientHeight - 1;
+  coverRadius.value = Math.min(16, Math.max(0, (root.clientHeight - root.scrollTop) / 4));
+}
 const calendarColumn = ref<HTMLDivElement | null>(null);
 const collectionHeight = ref<number>();
 let columnObserver: ResizeObserver | undefined;
@@ -177,8 +231,15 @@ const anchorDate = computed(() => parseDateInput(anchor.value) ?? now.value);
 const period = computed(() =>
   range.value === 'custom'
     ? customPeriod(from.value, to.value)!
-    : periodFor(range.value, anchorDate.value),
+    : periodFor(range.value, range.value === 'month' ? month.value : anchorDate.value),
 );
+watch(period, (next, previous) => {
+  if (range.value !== 'month' || (next.start === previous.start && next.end === previous.end))
+    return;
+  visibleCount.value = 50;
+  detailOpen.value = false;
+  if (listScroller.value) listScroller.value.scrollTop = 0;
+});
 const sessions = computed(() =>
   props.current && matchesTasks(props.current, selectedTasks.value)
     ? [props.current, ...taskRecords.value.filter((s) => s.id !== props.current?.id)]
@@ -192,12 +253,12 @@ const total = computed(() =>
 );
 const completedRecords = computed(() => earnedBeans(taskRecords.value, period.value));
 const groups = computed(() => {
-  const result: { date: string; records: Session[] }[] = [];
+  const result: { date: string; label: string; records: Session[] }[] = [];
   for (const session of filtered.value.slice(0, visibleCount.value)) {
     const date = dateInput(new Date(recordStartInPeriod(session, period.value, props.checkpoint)));
     let group = result.find((g) => g.date === date);
     if (!group) {
-      group = { date, records: [] };
+      group = { date, label: fullDate(parseDateInput(date)!), records: [] };
       result.push(group);
     }
     group.records.push(session);
@@ -206,18 +267,34 @@ const groups = computed(() => {
 });
 watch([range, anchor, from, to, selectedTasks], () => {
   visibleCount.value = 50;
+  detailOpen.value = false;
+});
+watch(detailOpen, async (open) => {
+  if (!open) return;
+  await nextTick();
+  const list = listScroller.value;
+  const record = list?.querySelector<HTMLElement>(`[data-record-id="${detail.value?.id}"]`);
+  if (!list || !record) return;
+  const bounds = list.getBoundingClientRect();
+  const row = record.getBoundingClientRect();
+  // Keep selection visible inside the list without moving the covering layer.
+  if (row.top < bounds.top) list.scrollTop += row.top - bounds.top;
+  else if (row.bottom > bounds.bottom) list.scrollTop += row.bottom - bounds.bottom;
 });
 watch(
   [loadTrigger, visibleCount],
   ([trigger]) => {
     loadObserver?.disconnect();
     if (!trigger) return;
+    const root =
+      trigger.closest<HTMLElement>('[data-history-list]') ??
+      trigger.closest<HTMLElement>('.details-content');
     loadObserver = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting))
           visibleCount.value = Math.min(filtered.value.length, visibleCount.value + 50);
       },
-      { root: trigger.closest('.details-content'), rootMargin: '300px 0px' },
+      { root, rootMargin: '300px 0px' },
     );
     loadObserver.observe(trigger);
   },
@@ -313,151 +390,317 @@ async function submit() {
 }
 </script>
 <template>
-  <section>
-    <div class="flex items-center justify-between gap-3 pt-5">
-      <h1 class="text-xl font-semibold tracking-tight">{{ copy.historyTitle }}</h1>
-      <button
-        class="button secondary compact"
-        :disabled="busy || !records.length"
-        @click="emit('export')"
-      >
-        <Download :size="14" />{{ copy.exportAll }}
-      </button>
-    </div>
-    <div
-      class="mb-7 mt-4 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 border-b border-line pb-5"
-    >
-      <div ref="calendarColumn" class="flex min-w-0 flex-col" data-history-calendar-column>
-        <HistoryRangeFilter
-          :range="range"
-          :from="from"
-          :to="to"
-          :today="dateInput(now)"
-          @range="range = $event"
-          @custom="applyCustom"
-        />
-        <HistoryCalendar
-          :month="month"
-          :selected="anchor"
-          :today="dateInput(now)"
-          :period="period"
-          :records="sessions"
-          :checkpoint="checkpoint"
-          :all="range === 'all'"
-          @browse="month = $event"
-          @select="selectDate"
-          @today="selectDate(dateInput(new Date()))"
-        />
-      </div>
+  <section
+    ref="historyRoot"
+    class="record-list-scroll h-full overflow-y-auto overscroll-none"
+    tabindex="0"
+    :aria-label="copy.historyTitle"
+    data-history-viewport
+    @scroll="updateCover"
+  >
+    <div class="relative h-[200%]" data-history-track>
       <div
-        class="flex min-w-0 flex-col items-center"
-        :style="collectionHeight === undefined ? undefined : { height: `${collectionHeight}px` }"
-        data-history-collection-column
+        class="sticky top-0 mx-auto flex h-1/2 w-full max-w-[820px] flex-col px-7"
+        :inert="recordsExpanded"
+        data-history-summary
       >
-        <SeriesCollection
-          class="!h-auto min-h-0 w-full flex-1"
-          :records="filtered"
-          :completed-records="completedRecords"
-          :series-id="seriesId"
-          :total="total"
-          fit-height
-        />
-        <p
-          class="mt-3 shrink-0 whitespace-nowrap text-xs leading-relaxed text-faint"
-          data-history-period
-        >
-          {{ periodLabel }}
-        </p>
-      </div>
-    </div>
-    <div
-      class="mb-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
-      data-task-header
-    >
-      <span class="eyebrow">{{ copy.historyEntries }}</span>
-      <div class="flex min-w-0 flex-wrap items-center gap-2" data-selected-task-tags>
-        <span
-          v-for="id in selectedTasks"
-          :key="id"
-          class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-line bg-surface-muted px-2 py-1 text-xs text-ink"
-          ><span
-            class="truncate"
-            :title="id === uncategorizedTask ? copy.uncategorized : taskName(id)"
-            >{{ id === uncategorizedTask ? copy.uncategorized : taskName(id) }}</span
-          ><button
-            type="button"
-            class="shrink-0 rounded text-muted hover:text-ink"
-            :aria-label="
-              copy.removeTaskFilter + (id === uncategorizedTask ? copy.uncategorized : taskName(id))
-            "
-            @click="removeTaskFilter(id)"
+        <div class="flex items-center justify-between gap-3 pt-5">
+          <h1 class="text-xl font-semibold tracking-tight">{{ copy.historyTitle }}</h1>
+          <button
+            class="button secondary compact"
+            :disabled="busy || !records.length"
+            @click="emit('export')"
           >
-            <X :size="12" /></button
-        ></span>
-      </div>
-      <div class="flex shrink-0 items-center gap-3">
-        <MultiSelect
-          id="history-tasks"
-          :label="copy.filterTasks"
-          :selected="selectedTasks"
-          :options="taskOptions"
-          :disabled="busy"
-          @update:selected="selectedTasks = $event"
-        /><span class="text-xs text-faint tabular-nums">{{
-          filtered.length.toString().padStart(2, '0')
-        }}</span>
-      </div>
-    </div>
-    <div v-if="!filtered.length" class="py-14 text-center text-faint">
-      <Clock3 class="mx-auto" :size="30" stroke-width="1" />
-      <h2 class="mb-2 mt-4 text-sm font-medium text-muted">{{ copy.noPeriodRecords }}</h2>
-    </div>
-    <section v-for="group in groups" :key="group.date" class="history-day">
-      <h2 class="mb-1 mt-5 text-xs font-medium text-muted">
-        {{ fullDate(parseDateInput(group.date)!) }}
-      </h2>
-      <div
-        v-for="s in group.records"
-        :key="s.id"
-        class="group -mx-2 flex items-center gap-2 rounded-lg px-2 py-3 hover:bg-surface-muted wide:gap-2.5"
-      >
-        <SeriesReward :series-id="seriesId" class="size-5" :duration="s.duration_ms" />
-        <div class="min-w-0 flex-1">
-          <strong class="block truncate text-sm font-normal">{{
-            s.title || (s.task_id ? taskName(s.task_id) : copy.untitled)
-          }}</strong
-          ><span class="mt-1.5 block text-xs text-faint"
-            >{{ recordTime(s) }}<span v-if="s.title && s.task_id"> · {{ taskName(s.task_id) }}</span
-            ><span v-if="s.corrected"> · {{ copy.corrected }}</span></span
-          >
+            <Download :size="14" />{{ copy.exportAll }}
+          </button>
         </div>
-        <span class="hidden shrink-0 text-xs text-muted wide:inline">{{ copy.focus }}</span
-        ><strong
-          class="mr-1 w-14 shrink-0 text-right text-xs font-medium tabular-nums wide:w-16"
-          :title="copy.sessionTotal + ' · ' + duration(s.duration_ms)"
-          >{{ duration(durationInPeriod(s, period, checkpoint)) }}</strong
-        ><button
-          class="icon-button opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-          :disabled="busy"
-          v-if="s.id !== current?.id"
-          :aria-label="copy.edit"
-          :title="copy.edit"
-          @click="edit(s)"
+        <div
+          class="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 pb-5"
         >
-          <Pencil :size="14" /></button
-        ><button
-          class="icon-button opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-          :disabled="busy"
-          v-if="s.id !== current?.id"
-          :aria-label="copy.remove"
-          :title="copy.remove"
-          @click="askDelete(s)"
-        >
-          <Trash2 :size="14" />
-        </button>
+          <div ref="calendarColumn" class="flex min-w-0 flex-col" data-history-calendar-column>
+            <HistoryRangeFilter
+              :range="range"
+              :from="from"
+              :to="to"
+              :today="dateInput(now)"
+              @range="range = $event"
+              @custom="applyCustom"
+            />
+            <HistoryCalendar
+              :month="month"
+              :selected="range === 'month' ? dateInput(month) : anchor"
+              :today="dateInput(now)"
+              :period="period"
+              :records="sessions"
+              :checkpoint="checkpoint"
+              :all="range === 'all'"
+              @browse="month = $event"
+              @select="selectDate"
+              @today="selectDate(dateInput(new Date()))"
+            />
+          </div>
+          <div
+            class="flex min-w-0 flex-col items-center"
+            :style="
+              collectionHeight === undefined ? undefined : { height: `${collectionHeight}px` }
+            "
+            data-history-collection-column
+          >
+            <SeriesCollection
+              class="!h-auto min-h-0 w-full flex-1"
+              :records="filtered"
+              :completed-records="completedRecords"
+              :series-id="seriesId"
+              :total="total"
+              fit-height
+            />
+            <p
+              class="mt-3 shrink-0 whitespace-nowrap text-xs leading-relaxed text-faint"
+              data-history-period
+            >
+              {{ periodLabel }}
+            </p>
+          </div>
+        </div>
       </div>
-    </section>
-    <div v-if="filtered.length > visibleCount" ref="loadTrigger" class="h-px" aria-hidden="true" />
+      <div
+        class="history-sheet absolute inset-x-0 top-1/2 z-10 flex h-1/2 flex-col py-5"
+        :style="{
+          borderTopLeftRadius: `${coverRadius}px`,
+          borderTopRightRadius: `${coverRadius}px`,
+        }"
+        :class="{ 'shadow-none': !recordsVisible }"
+        :inert="!recordsVisible"
+        data-history-cover
+      >
+        <div class="mx-auto flex h-full min-h-0 w-full max-w-[820px] flex-col px-7">
+          <div
+            class="mb-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 shrink-0"
+            data-task-header
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="eyebrow">{{ copy.historyEntries }}</span>
+              <div
+                class="relative grid h-7 shrink-0 grid-cols-2 rounded-lg bg-surface-muted p-0.5"
+                role="radiogroup"
+                :aria-label="copy.historyEntries"
+                data-history-view
+              >
+                <span
+                  aria-hidden="true"
+                  class="pointer-events-none absolute inset-y-0.5 rounded-md border border-line bg-surface shadow-sm transition-[left] duration-150 motion-reduce:transition-none"
+                  :style="{
+                    left: 'calc(2px + (100% - 4px) * ' + viewIndex + ' / 2)',
+                    width: 'calc((100% - 4px) / 2)',
+                  }"
+                />
+                <button
+                  v-for="option in viewOptions"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  :aria-checked="historyView === option.value"
+                  :aria-label="option.title"
+                  :title="option.title"
+                  :tabindex="historyView === option.value ? 0 : -1"
+                  class="relative z-10 flex items-center justify-center rounded-md px-2 py-1"
+                  :class="historyView === option.value ? 'text-ink' : 'text-muted hover:text-ink'"
+                  @click="historyView = option.value"
+                  @keydown="navigateView($event, option.value === 'list' ? 0 : 1)"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    aria-hidden="true"
+                  >
+                    <path :d="option.path" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div
+              class="record-list-scroll flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden"
+              data-selected-task-tags
+            >
+              <span
+                v-for="id in selectedTasks"
+                :key="id"
+                class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1 rounded-md border border-line bg-surface-muted px-2 py-1 text-xs text-ink"
+                ><span
+                  class="truncate"
+                  :title="id === uncategorizedTask ? copy.uncategorized : taskName(id)"
+                  >{{ id === uncategorizedTask ? copy.uncategorized : taskName(id) }}</span
+                ><button
+                  type="button"
+                  class="shrink-0 rounded text-muted hover:text-ink"
+                  :aria-label="
+                    copy.removeTaskFilter +
+                    (id === uncategorizedTask ? copy.uncategorized : taskName(id))
+                  "
+                  @click="removeTaskFilter(id)"
+                >
+                  <X :size="12" /></button
+              ></span>
+            </div>
+            <div class="flex shrink-0 items-center gap-3">
+              <MultiSelect
+                id="history-tasks"
+                :label="copy.filterTasks"
+                :selected="selectedTasks"
+                :options="taskOptions"
+                :disabled="busy"
+                @update:selected="selectedTasks = $event"
+              /><span class="text-xs text-faint tabular-nums">{{
+                filtered.length.toString().padStart(2, '0')
+              }}</span>
+            </div>
+          </div>
+          <div v-if="!filtered.length" class="py-14 text-center text-faint">
+            <Clock3 class="mx-auto" :size="30" stroke-width="1" />
+            <h2 class="mb-2 mt-4 text-sm font-medium text-muted">{{ copy.noPeriodRecords }}</h2>
+          </div>
+          <div
+            v-if="historyView === 'timeline'"
+            class="record-list-scroll min-h-0 flex-1"
+            :class="recordsExpanded ? 'overflow-y-auto' : 'overflow-y-hidden'"
+          >
+            <HistoryTimeline
+              v-model:span="timelineSpan"
+              :groups="groups"
+              :name-of="recordName"
+              :time-of="recordTime"
+              :checkpoint="checkpoint"
+              :series-id="seriesId"
+              @select="fromTimeline"
+            />
+          </div>
+          <div v-else class="relative min-h-0 flex-1 overflow-hidden" data-history-records>
+            <div
+              class="h-full min-w-0 overflow-hidden transition-[width] duration-[240ms] ease-out motion-reduce:transition-none"
+              :style="{ width: detailOpen ? 'calc(100% - max(266px, 44%))' : '100%' }"
+              data-history-list-column
+            >
+              <div
+                ref="listScroller"
+                class="record-list-scroll h-full overflow-x-hidden px-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-muted"
+                :class="recordsExpanded ? 'overflow-y-auto' : 'overflow-y-hidden'"
+                tabindex="0"
+                role="region"
+                :aria-label="copy.historyEntries"
+                data-history-list
+              >
+                <section v-for="(group, index) in groups" :key="group.date" class="history-day">
+                  <h2
+                    class="mb-1 text-xs font-medium text-muted"
+                    :class="index === 0 ? 'mt-0' : 'mt-5'"
+                  >
+                    {{ group.label }}
+                  </h2>
+                  <div
+                    v-for="s in group.records"
+                    :key="s.id"
+                    :data-record-id="s.id"
+                    tabindex="0"
+                    class="group flex cursor-pointer items-center gap-2 rounded-lg py-3 pl-2 pr-[9px] hover:bg-surface-muted wide:gap-2.5"
+                    :class="{ 'bg-surface-muted': detailOpen && detail?.id === s.id }"
+                    @click="openDetail(s)"
+                    @keydown.enter.self="openDetail(s)"
+                  >
+                    <SeriesReward :series-id="seriesId" class="size-5" :duration="s.duration_ms" />
+                    <div class="min-w-0 flex-1">
+                      <strong class="block truncate text-sm font-normal">{{
+                        recordName(s)
+                      }}</strong>
+                      <span
+                        class="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-faint"
+                        :title="recordMeta(s)"
+                      >
+                        <span class="shrink-0">{{ recordTime(s) }}</span>
+                        <span v-if="s.corrected" class="shrink-0 whitespace-nowrap"
+                          >· {{ copy.corrected }}</span
+                        >
+                        <span v-if="s.title && s.task_id" class="truncate"
+                          >· {{ taskName(s.task_id) }}</span
+                        >
+                      </span>
+                    </div>
+                    <span class="hidden shrink-0 text-xs text-muted wide:inline">{{
+                      copy.focus
+                    }}</span>
+                    <!-- 32px targets around 14px icons leave 9px on each side. -->
+                    <div class="flex shrink-0 items-center" data-record-actions>
+                      <strong
+                        class="w-14 shrink-0 text-right text-xs font-medium tabular-nums wide:w-16"
+                        :class="listActionsVisible ? 'mr-[9px]' : 'mr-0'"
+                        :title="copy.sessionTotal + ' · ' + duration(s.duration_ms)"
+                        >{{ duration(durationInPeriod(s, period, checkpoint)) }}</strong
+                      ><button
+                        class="icon-button opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                        :disabled="busy"
+                        v-if="listActionsVisible && s.id !== current?.id"
+                        :aria-label="copy.edit"
+                        :title="copy.edit"
+                        @click.stop="edit(s)"
+                      >
+                        <Pencil :size="14" /></button
+                      ><button
+                        class="icon-button opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                        :disabled="busy"
+                        v-if="listActionsVisible && s.id !== current?.id"
+                        :aria-label="copy.remove"
+                        :title="copy.remove"
+                        @click.stop="askDelete(s)"
+                      >
+                        <Trash2 :size="14" />
+                      </button>
+                    </div>
+                  </div>
+                </section>
+                <div
+                  v-if="filtered.length > visibleCount"
+                  ref="loadTrigger"
+                  class="h-px"
+                  aria-hidden="true"
+                />
+              </div>
+            </div>
+            <Transition
+              enter-active-class="transition-transform duration-[240ms] ease-out motion-reduce:transition-none"
+              enter-from-class="translate-x-[calc(100%+16px)]"
+              enter-to-class="translate-x-0"
+              leave-active-class="pointer-events-none transition-transform duration-[240ms] ease-out motion-reduce:transition-none"
+              leave-from-class="translate-x-0"
+              leave-to-class="translate-x-[calc(100%+16px)]"
+              @before-enter="detailLeaving = false"
+              @before-leave="detailLeaving = true"
+              @after-leave="detailLeaving = false"
+              @leave-cancelled="detailLeaving = false"
+            >
+              <RecordDetailPanel
+                v-if="detailOpen && detail"
+                class="!absolute inset-y-0 right-0 h-full"
+                style="width: calc(max(266px, 44%) - 16px)"
+                data-history-detail
+                :record="detail"
+                :series-id="seriesId"
+                :name="recordName(detail)"
+                :time="recordTime(detail)"
+                :effective-ms="durationInPeriod(detail, period, checkpoint)"
+                :busy="busy"
+                :is-current="detail.id === current?.id"
+                @collapse="detailOpen = false"
+                @edit="edit"
+                @remove="askDelete"
+              />
+            </Transition>
+          </div>
+        </div>
+      </div>
+    </div>
     <dialog
       ref="modal"
       class="modal"

@@ -47,6 +47,12 @@ Kairomo 是本地优先的时间与任务管理桌面工具，首版 macOS，预
 - npm run tauri -- build --debug --bundles app（macOS）
 - Windows 需 Windows runner 或真机验证，不把 macOS 检查当作跨平台验收。
 
+## 开发版验收
+
+- 每次修改本仓库源码或前端资源后，除完成对应验证外，还要重新构建 debug 应用，关闭旧的 `Kairomo Dev` 进程并打开 `target/debug/bundle/macos/Kairomo Dev.app`，让用户可以直接验收。不要只报告检查通过就结束。
+- 构建使用 `npm run tauri -- build --debug --bundles app`；如果当前 shell 找不到 `cargo`，用 `PATH="$HOME/.cargo/bin:$PATH"` 执行，不修改系统环境。
+- 只重启 `Kairomo Dev`。不要关闭、替换或重启 `/Applications/Kairomo Beta.app`。
+
 ## 协作与 Git
 
 继承上层 AGENTS.md 和 dev-main / git-rule。按已批准范围开发，新增范围先说明。使用 feature/、fix/、chore/、docs/ 分支。一行中文 Conventional Commit。未获明确仓库提交口令不得 commit/push/PR/merge。版本 0.1.0，更新版本不等于发布。

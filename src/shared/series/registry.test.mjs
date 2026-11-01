@@ -78,6 +78,8 @@ test('shared catalog has complete names, valid palettes and packaged native asse
     for (const mode of ['light', 'dark']) {
       for (const field of ['ink', 'muted', 'selected', 'hover', 'line', 'background'])
         assert.match(theme.rest[mode][field], /^#[0-9a-f]{6}$/i);
+      assert.ok(theme.rest[mode].layers.length >= 2, 'rest palette needs slider layers');
+      for (const layer of theme.rest[mode].layers) assert.match(layer, /^#[0-9a-f]{6}$/i);
       for (const state of ['focus', 'rest', 'overtime']) {
         if (!theme.menu[state]) continue;
         for (const field of ['ink', 'background'])

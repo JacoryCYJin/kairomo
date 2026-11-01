@@ -86,6 +86,51 @@
   .icon-button {
     @apply inline-flex size-8 items-center justify-center rounded-lg p-0 text-muted enabled:hover:bg-hover enabled:hover:text-ink;
   }
+  .zoom-slider {
+    -webkit-appearance: none;
+    @apply h-4 w-32 cursor-pointer bg-transparent;
+    --zoom-from: var(--zoom-from-light, var(--line-strong));
+    --zoom-to: var(--zoom-to-light, var(--line-strong));
+  }
+  [data-theme='dark'] .zoom-slider {
+    --zoom-from: var(--zoom-from-dark, var(--line-strong));
+    --zoom-to: var(--zoom-to-dark, var(--line-strong));
+  }
+  .zoom-slider::-webkit-slider-runnable-track {
+    @apply h-1 rounded-full;
+    background: linear-gradient(
+      to right,
+      var(--zoom-from) 0,
+      var(--zoom-to) var(--zoom-fill, 0%),
+      var(--line-strong) var(--zoom-fill, 0%),
+      var(--line-strong) 100%
+    );
+  }
+  .zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    @apply -mt-1 size-3 rounded-full border border-line-strong bg-surface;
+    box-shadow: 0 1px 2px #00000014;
+  }
+  .zoom-slider:focus-visible {
+    outline: 2px solid var(--muted);
+    outline-offset: 2px;
+  }
+  .record-list-scroll {
+    scrollbar-width: none;
+  }
+  .history-sheet {
+    background: var(--history-sheet-background);
+    -webkit-backdrop-filter: blur(24px) saturate(115%);
+    backdrop-filter: blur(24px) saturate(115%);
+    box-shadow:
+      inset 0 1px 0 var(--history-sheet-edge),
+      var(--history-sheet-shadow);
+  }
+  .record-list-scroll::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
   .text-button {
     @apply inline-flex items-center gap-1 py-1 text-xs text-muted enabled:hover:text-ink;
   }

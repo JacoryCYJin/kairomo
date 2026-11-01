@@ -9,6 +9,7 @@ export interface RestPalette {
   readonly hover: string;
   readonly line: string;
   readonly background: string;
+  readonly layers: readonly string[];
 }
 export interface RestVisual {
   readonly light: RestPalette;
