@@ -109,7 +109,12 @@ export function useKairomo() {
     settings: Partial<
       Pick<
         Settings,
-        'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode' | 'retain_task'
+        | 'focus_minutes'
+        | 'break_minutes'
+        | 'notifications'
+        | 'focus_mode'
+        | 'retain_task'
+        | 'task_colors'
       >
     >,
   ) {
@@ -200,7 +205,6 @@ export function useKairomo() {
     } catch (failure) {
       const message = String(failure);
       if (message.includes('task_in_use')) return copy.value.taskInUse;
-      if (message.includes('task_has_records')) return copy.value.taskHasRecords;
       if (message.includes('duplicate_task')) return copy.value.taskDuplicate;
       if (message.includes('invalid_task_name')) return copy.value.taskNameInvalid;
       return copy.value.taskSaveFailed;

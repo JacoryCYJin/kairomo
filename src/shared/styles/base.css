@@ -61,6 +61,11 @@
   input::placeholder {
     @apply text-faint;
   }
+  [draggable='true'] {
+    -webkit-user-drag: element;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 /* Shared controls only. Page layout belongs in each Vue template. */
@@ -118,10 +123,34 @@
   .record-list-scroll {
     scrollbar-width: none;
   }
+  .hue-slider {
+    -webkit-appearance: none;
+    @apply h-4 w-full cursor-pointer bg-transparent;
+  }
+  .hue-slider::-webkit-slider-runnable-track {
+    @apply h-2 rounded-full;
+    background: linear-gradient(
+      to right,
+      #ff0000,
+      #ffff00,
+      #00ff00,
+      #00ffff,
+      #0000ff,
+      #ff00ff,
+      #ff0000
+    );
+  }
+  .hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    @apply -mt-1 size-4 rounded-full border-2 border-surface;
+    box-shadow: 0 0 0 1px var(--line-strong);
+  }
+  .hue-slider:focus-visible {
+    outline: 2px solid var(--muted);
+    outline-offset: 2px;
+  }
   .history-sheet {
     background: var(--history-sheet-background);
-    -webkit-backdrop-filter: blur(24px) saturate(115%);
-    backdrop-filter: blur(24px) saturate(115%);
     box-shadow:
       inset 0 1px 0 var(--history-sheet-edge),
       var(--history-sheet-shadow);

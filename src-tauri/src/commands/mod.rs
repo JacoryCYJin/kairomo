@@ -254,11 +254,15 @@ pub fn manage_tasks(
     state: State<'_, AppState>,
     change: timer_core::TaskChange,
 ) -> Result<Snapshot, String> {
+    let deleting = matches!(&change, timer_core::TaskChange::Delete { .. });
     let snapshot = state
         .0
         .lock()
         .map_err(|_| "runtime_unavailable")?
         .manage_tasks(change)?;
     let _ = app.emit("timer:changed", &snapshot);
+    if deleting {
+        let _ = app.emit("records:changed", ());
+    }
     Ok(snapshot)
 }

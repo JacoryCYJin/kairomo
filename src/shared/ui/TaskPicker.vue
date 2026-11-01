@@ -18,6 +18,19 @@ const options = computed(() => [
   { value: '', label: copy.value.uncategorized },
   ...props.tasks.filter((t) => !t.archived).map((t) => ({ value: t.id, label: t.name })),
 ]);
+const ticks = computed(() => {
+  const slots = options.value.length - 1;
+  if (slots < 1) return [];
+  return Array.from({ length: slots * 8 + 1 }, (_, index) => ({
+    left: index * 6,
+    size:
+      index % 8 === 0
+        ? 'h-1.5 opacity-80'
+        : index % 4 === 0
+          ? 'h-1 opacity-30'
+          : 'h-0.5 opacity-20',
+  }));
+});
 // Native horizontal scrolling owns momentum. Only the final alignment is animated here.
 const step = 48;
 const track = ref<HTMLDivElement>();
@@ -316,7 +329,7 @@ async function save() {
         role="radiogroup"
         :aria-label="copy.currentTask"
         :aria-disabled="blocked"
-        class="flex overflow-x-auto overscroll-contain px-12 [scrollbar-width:none] [touch-action:pan-x] [-webkit-mask-image:linear-gradient(to_right,transparent,black_24%,black_76%,transparent)] [mask-image:linear-gradient(to_right,transparent,black_24%,black_76%,transparent)] [&::-webkit-scrollbar]:hidden"
+        class="overflow-x-auto overscroll-contain [scrollbar-width:none] [touch-action:pan-x] [-webkit-mask-image:linear-gradient(to_right,transparent,black_24%,black_76%,transparent)] [mask-image:linear-gradient(to_right,transparent,black_24%,black_76%,transparent)] [&::-webkit-scrollbar]:hidden"
         @wheel="wheel"
         @scroll="scrolled"
         @pointerdown="pointerDown"
@@ -324,40 +337,44 @@ async function save() {
         @pointerup="pointerUp"
         @pointercancel="pointerUp"
       >
-        <button
-          v-for="(option, index) in options"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="displayIndex === index"
-          :tabindex="displayIndex === index ? 0 : -1"
-          :title="option.label"
-          :disabled="blocked"
-          class="h-5 w-12 shrink-0 truncate border-0 bg-transparent px-0.5 text-center text-xs font-medium leading-5 text-ink"
-          :style="emphasis(index)"
-          @click="choose(index)"
-          @keydown="keyboard($event, index)"
-        >
-          {{ option.label }}
-        </button>
+        <div class="relative flex h-[27px] w-max items-start px-12">
+          <button
+            v-for="(option, index) in options"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="displayIndex === index"
+            :tabindex="displayIndex === index ? 0 : -1"
+            :title="option.label"
+            :disabled="blocked"
+            class="h-5 w-12 shrink-0 truncate border-0 bg-transparent px-0.5 text-center text-xs font-medium leading-5 text-ink"
+            :style="emphasis(index)"
+            @click="choose(index)"
+            @keydown="keyboard($event, index)"
+          >
+            {{ option.label }}
+          </button>
+          <div
+            v-if="ticks.length"
+            aria-hidden="true"
+            class="pointer-events-none absolute top-5 h-[7px]"
+            :style="{ left: '72px', width: `${(ticks.length - 1) * 6}px` }"
+          >
+            <i
+              v-for="tick in ticks"
+              :key="tick.left"
+              class="absolute bottom-0 block w-px bg-current"
+              :class="tick.size"
+              :style="{ left: `${tick.left}px` }"
+            ></i>
+          </div>
+        </div>
       </div>
-      <div
+      <span
+        v-if="ticks.length"
         aria-hidden="true"
-        class="pointer-events-none mt-px flex h-[7px] items-end justify-between px-[3px] [mask-image:linear-gradient(to_right,transparent,black_22%,black_78%,transparent)]"
-      >
-        <i
-          v-for="tick in 25"
-          :key="tick"
-          class="block w-px bg-current"
-          :class="
-            tick === 13
-              ? 'h-1.5 bg-ink opacity-80'
-              : tick % 4 === 1
-                ? 'h-1 opacity-30'
-                : 'h-0.5 opacity-20'
-          "
-        ></i>
-      </div>
+        class="pointer-events-none absolute left-1/2 top-5 h-[7px] w-px -translate-x-1/2 bg-ink"
+      ></span>
     </div>
     <button
       ref="createButton"
@@ -400,7 +417,9 @@ async function save() {
         <div class="modal-actions">
           <button type="button" class="button secondary" :disabled="busy" @click="modal?.close()">
             {{ copy.cancel }}</button
-          ><button type="submit" class="button primary" :disabled="busy">{{ copy.save }}</button>
+          ><button type="submit" class="button dialog-confirm" :disabled="busy">
+            {{ copy.save }}
+          </button>
         </div>
       </form>
     </dialog>

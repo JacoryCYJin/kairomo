@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { copy, localTime } from '../../shared/i18n';
+import { taskInk } from '../../shared/taskColor';
 import { seriesFor } from '../../shared/series/catalog';
 import type { SeriesId } from '../../shared/series/types';
 import {
@@ -19,6 +20,7 @@ import type { Session } from '../../shared/ipc/types';
 const props = defineProps<{
   groups: { date: string; label: string; records: Session[] }[];
   nameOf: (record: Session) => string;
+  colorOf: (record: Session) => string | null;
   timeOf: (record: Session) => string;
   checkpoint: number;
   span: number;
@@ -105,14 +107,16 @@ const recordAnchor = computed(() => {
   }
   return Math.min(Math.max((first + last) / 2, day.start), day.end);
 });
-function recordSpan(day: string, record: Session) {
+function recordStyle(day: string, record: Session) {
   const [year, month, date] = day.split('-').map(Number);
   const part = daySpan(
     record.started_at_ms,
     record.ended_at_ms ?? props.checkpoint,
     new Date(year!, month! - 1, date!),
   );
-  return { left: `${part.left}%`, width: `${part.width}%`, minWidth: '6px' };
+  const style = { left: `${part.left}%`, width: `${part.width}%`, minWidth: '6px' };
+  const color = props.colorOf(record);
+  return color ? { ...style, backgroundColor: color, color: taskInk(color) } : style;
 }
 function description(record: Session) {
   return `${props.nameOf(record)} · ${props.timeOf(record)}`;
@@ -268,8 +272,9 @@ onUnmounted(() => {
               v-for="record in group.records"
               :key="record.id"
               type="button"
-              class="absolute inset-y-1 flex items-center overflow-hidden whitespace-nowrap rounded-md border border-line-strong bg-surface px-1.5 text-xs"
-              :style="recordSpan(group.date, record)"
+              class="absolute inset-y-1 flex items-center overflow-hidden whitespace-nowrap rounded-md px-1.5 text-xs"
+              :class="colorOf(record) ? '' : 'border border-line-strong bg-surface'"
+              :style="recordStyle(group.date, record)"
               :title="description(record)"
               :aria-label="description(record)"
               @click="emit('select', record)"

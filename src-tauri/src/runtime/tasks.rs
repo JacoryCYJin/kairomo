@@ -14,19 +14,15 @@ impl Runtime {
     pub fn manage_tasks(&mut self, change: timer_core::TaskChange) -> Result<Snapshot, String> {
         let (mut next, reached, completed, measured) = self.advanced();
         match change {
-            timer_core::TaskChange::Create { name } => {
-                next.add_task(Uuid::new_v4().to_string(), &name, false)
+            timer_core::TaskChange::Create { name, color } => {
+                next.add_task_with_color(Uuid::new_v4().to_string(), &name, color.as_deref(), false)
             }
             timer_core::TaskChange::Rename { id, name } => next.rename_task(&id, &name),
-            timer_core::TaskChange::Archive { id, archived } => next.archive_task(&id, archived),
-            timer_core::TaskChange::Delete { id } => {
-                let records = self.repository.sessions().map_err(|e| e.to_string())?;
-                let has_records = records
-                    .iter()
-                    .chain(completed.iter())
-                    .any(|s| s.task_id.as_deref() == Some(&id));
-                next.delete_task(&id, has_records)
+            timer_core::TaskChange::Update { id, name, color } => {
+                next.update_task(&id, &name, color.as_deref())
             }
+            timer_core::TaskChange::Archive { id, archived } => next.archive_task(&id, archived),
+            timer_core::TaskChange::Delete { id } => next.delete_task(&id),
             timer_core::TaskChange::Reorder { ids } => next.reorder_tasks(&ids),
         }
         .map_err(|e| e.to_string())?;
@@ -39,7 +35,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deletion_cannot_bypass_a_focus_record_completed_in_the_same_dispatch() {
+    fn deletion_clears_a_focus_record_completed_in_the_same_dispatch() {
         use timer_core::{FocusMode, TaskChange};
         let folder = std::env::temp_dir().join(format!("kairomo-task-deadline-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -53,11 +49,12 @@ mod tests {
         rt.action("start", "").unwrap();
         rt.engine.advance(60_000, now_ms());
         assert!(rt.repository.sessions().unwrap().is_empty());
-        assert!(rt
-            .manage_tasks(TaskChange::Delete { id: id.clone() })
-            .unwrap_err()
-            .contains("task_has_records"));
-        assert!(rt.engine.state.tasks.iter().any(|t| t.id == id));
+        rt.manage_tasks(TaskChange::Delete { id: id.clone() })
+            .unwrap();
+        assert!(!rt.engine.state.tasks.iter().any(|t| t.id == id));
+        let records = rt.repository.sessions().unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].task_id.is_none());
         drop(rt);
         std::fs::remove_dir_all(folder).unwrap();
     }
@@ -79,9 +76,10 @@ mod tests {
             })
             .is_err());
         rt.action("finish", "").unwrap();
-        let original = serde_json::to_value(rt.repository.sessions().unwrap()).unwrap();
+        let original = rt.repository.sessions().unwrap();
         rt.manage_tasks(TaskChange::Create {
             name: "物理".into(),
+            color: Some("#3e63dd".into()),
         })
         .unwrap();
         let physics = rt
@@ -111,12 +109,6 @@ mod tests {
             archived: true,
         })
         .unwrap();
-        let before = serde_json::to_value(&rt.engine.state).unwrap();
-        assert!(rt
-            .manage_tasks(TaskChange::Delete { id: math.clone() })
-            .unwrap_err()
-            .contains("task_has_records"));
-        assert_eq!(serde_json::to_value(&rt.engine.state).unwrap(), before);
         drop(rt);
         let mut rt = Runtime::open(&path).unwrap();
         assert_eq!(rt.engine.state.tasks[0].id, physics);
@@ -124,22 +116,28 @@ mod tests {
         assert!(rt.engine.state.tasks[1].archived);
         assert_eq!(
             serde_json::to_value(rt.repository.sessions().unwrap()).unwrap(),
-            original
+            serde_json::to_value(&original).unwrap()
         );
         rt.manage_tasks(TaskChange::Archive {
             id: math.clone(),
             archived: false,
         })
         .unwrap();
-        rt.manage_tasks(TaskChange::Delete { id: physics }).unwrap();
+        rt.manage_tasks(TaskChange::Delete { id: math.clone() })
+            .unwrap();
+        assert_eq!(rt.engine.state.tasks.len(), 1);
         drop(rt);
         let rt = Runtime::open(&path).unwrap();
         assert_eq!(rt.engine.state.tasks.len(), 1);
-        assert!(!rt.engine.state.tasks[0].archived);
-        assert_eq!(rt.engine.state.tasks[0].id, math);
+        assert_eq!(rt.engine.state.tasks[0].id, physics);
+        let records = rt.repository.sessions().unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].task_id.is_none());
+        assert_eq!(records[0].started_at_ms, original[0].started_at_ms);
+        assert_eq!(records[0].duration_ms, original[0].duration_ms);
         assert_eq!(
-            serde_json::to_value(rt.repository.sessions().unwrap()).unwrap(),
-            original
+            serde_json::to_value(&records[0].intervals).unwrap(),
+            serde_json::to_value(&original[0].intervals).unwrap()
         );
         drop(rt);
         std::fs::remove_dir_all(folder).unwrap();

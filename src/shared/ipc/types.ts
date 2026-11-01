@@ -31,6 +31,7 @@ export interface ThemeOptionsChange {
 }
 export interface Settings {
   theme_options?: Partial<Record<SeriesId, Record<string, ThemeOptionValue>>>;
+  task_colors?: string[];
   bean_range: BeanRange;
   phrases: Phrases;
   focus_minutes: number;
@@ -49,13 +50,15 @@ export interface Interval {
   duration_ms: number;
 }
 export type TaskChange =
-  | { action: 'create'; name: string }
+  | { action: 'create'; name: string; color?: string | null }
   | { action: 'rename'; id: string; name: string }
+  | { action: 'update'; id: string; name: string; color?: string | null }
   | { action: 'archive'; id: string; archived: boolean }
   | { action: 'delete'; id: string }
   | { action: 'reorder'; ids: string[] };
 export interface Task {
   archived?: boolean;
+  color?: string | null;
   id: string;
   name: string;
 }

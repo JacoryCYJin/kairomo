@@ -30,7 +30,12 @@ const emit = defineEmits<{
     Partial<
       Pick<
         Settings,
-        'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode' | 'retain_task'
+        | 'focus_minutes'
+        | 'break_minutes'
+        | 'notifications'
+        | 'focus_mode'
+        | 'retain_task'
+        | 'task_colors'
       >
     >,
   ];
@@ -198,7 +203,7 @@ function choosePreference(key: keyof Preferences, value: string) {
                 @change="
                   emit('save', { notifications: ($event.target as HTMLInputElement).checked })
                 "
-                class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-ink"
+                class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-dialog-confirm"
                 type="checkbox"
                 role="switch"
                 aria-describedby="notifications-hint"
@@ -220,6 +225,7 @@ function choosePreference(key: keyof Preferences, value: string) {
         :manage="manageTasks ?? unavailable"
         @page="navigate"
         @retain="emit('save', { retain_task: $event })"
+        @colors="emit('save', { task_colors: $event })"
       />
       <section v-show="!taskPage" class="mt-4" :aria-label="copy.pageSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.pageSettings }}</h2>
