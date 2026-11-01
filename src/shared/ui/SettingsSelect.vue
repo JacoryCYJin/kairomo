@@ -8,10 +8,12 @@ const props = defineProps<{
   describedby?: string;
   options: { value: string; label: string }[];
   disabled?: boolean;
+  compact?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [string] }>();
 const trigger = ref<HTMLButtonElement>();
 const panel = ref<HTMLElement>();
+const portal = ref<string | HTMLElement>('body');
 const opened = ref(false);
 const positioned = ref(false);
 const active = ref(0);
@@ -56,6 +58,7 @@ function show() {
   if (props.disabled || !props.options.length) return;
   const rect = trigger.value?.getBoundingClientRect();
   if (!rect) return;
+  portal.value = trigger.value?.closest<HTMLDialogElement>('dialog[open]') ?? 'body';
   const height = Math.min(224, props.options.length * 32 + 8);
   const below = window.innerHeight - rect.bottom - 14;
   const above = rect.top - 14;
@@ -187,6 +190,7 @@ onUnmounted(() => {
   <button
     :id="id"
     ref="trigger"
+    :style="compact ? { minWidth: '0', maxWidth: '112px' } : undefined"
     type="button"
     role="combobox"
     :aria-label="label"
@@ -206,14 +210,14 @@ onUnmounted(() => {
     <span class="truncate">{{ selectedLabel }}</span>
     <ChevronDown class="size-3 text-muted" aria-hidden="true" />
   </button>
-  <Teleport to="body">
+  <Teleport :to="portal">
     <div
       v-if="opened"
       :id="`${id}-listbox`"
       ref="panel"
       role="listbox"
       :aria-label="label"
-      class="fixed z-50 overflow-y-auto overscroll-contain rounded-lg border border-line-strong bg-surface p-1 text-xs text-ink shadow-sm"
+      class="fixed z-50 overflow-y-auto overscroll-contain rounded-lg border border-line-strong bg-surface p-1 text-xs text-ink shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       :class="{ invisible: !positioned }"
       :style="position"
       @mousedown.prevent

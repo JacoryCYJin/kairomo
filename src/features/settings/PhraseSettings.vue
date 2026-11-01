@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { ArrowLeft, Check, ChevronRight, Circle, Plus, Trash2 } from 'lucide-vue-next';
+import { Check, ChevronRight, Circle, Plus, Trash2 } from 'lucide-vue-next';
 import { copy } from '../../shared/i18n';
 import { emptyPhrases, type Phrase, type Phrases } from '../../shared/ipc/types';
 import { libraryAttribution, selectedPhrasesFirst } from './phraseLibrary';
 import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
+import SettingsSubpage from './SettingsSubpage.vue';
 const props = defineProps<{ settings: Phrases; busy: boolean }>();
-const emit = defineEmits<{ save: [Phrases]; page: [boolean] }>();
+const emit = defineEmits<{
+  save: [Phrases];
+  page: ['settings' | 'phrase-library' | 'phrase-editor'];
+}>();
 const draft = reactive<Phrases>(emptyPhrases());
 const page = ref<'settings' | 'library' | 'editor'>('settings');
 const editor = ref<Phrase | null>(null);
@@ -61,7 +65,10 @@ function schedule() {
 }
 function navigate(next: 'settings' | 'library' | 'editor') {
   page.value = next;
-  emit('page', next !== 'settings');
+  emit(
+    'page',
+    next === 'settings' ? 'settings' : next === 'library' ? 'phrase-library' : 'phrase-editor',
+  );
 }
 function open(entry?: Phrase) {
   adding.value = !entry;
@@ -142,30 +149,21 @@ onBeforeUnmount(flushEditor);
         </div>
       </fieldset>
     </template>
-    <template v-else-if="page === 'library'">
-      <button
-        type="button"
-        class="mb-6 inline-flex items-center gap-2 py-1 text-xs text-muted"
-        @click="navigate('settings')"
+    <SettingsSubpage
+      v-else-if="page === 'library'"
+      :title="copy.phraseLibrary"
+      :back-label="copy.settingsBack"
+      :busy="busy"
+      @back="navigate('settings')"
+    >
+      <template #meta>{{
+        copy.phraseCount.replace('{count}', String(draft.entries.length))
+      }}</template>
+      <template #actions
+        ><button type="button" class="text-button min-h-8 gap-2" :disabled="busy" @click="open()">
+          <Plus :size="16" />{{ copy.addPhrase }}
+        </button></template
       >
-        <ArrowLeft :size="14" />{{ copy.settings }}
-      </button>
-      <div class="mb-5 flex items-center justify-between gap-3">
-        <div class="flex items-baseline gap-2.5">
-          <h1 class="text-lg font-semibold">{{ copy.phraseLibrary }}</h1>
-          <span class="text-xs tabular-nums text-faint">{{
-            copy.phraseCount.replace('{count}', String(draft.entries.length))
-          }}</span>
-        </div>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 py-2 text-xs"
-          :disabled="busy"
-          @click="open()"
-        >
-          <Plus :size="14" />{{ copy.addPhrase }}
-        </button>
-      </div>
       <div :aria-label="copy.phraseLibrary">
         <p v-if="!entries.length" class="py-10 text-xs text-faint">{{ copy.noPhrases }}</p>
         <div
@@ -198,82 +196,81 @@ onBeforeUnmount(flushEditor);
           </button>
         </div>
       </div>
-    </template>
-    <template v-else-if="editor">
-      <div class="mb-6 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 py-1 text-xs text-muted"
-          @click="back"
-        >
-          <ArrowLeft :size="14" />{{ copy.phraseLibrary }}
-        </button>
-        <button
+    </SettingsSubpage>
+    <SettingsSubpage
+      v-else-if="editor"
+      :title="adding ? copy.addPhrase : copy.phraseEdit"
+      :back-label="copy.phraseBack"
+      :busy="busy"
+      @back="back"
+    >
+      <template #actions
+        ><button
           v-if="!adding"
           type="button"
-          class="inline-flex size-8 items-center justify-center text-muted"
+          class="icon-button"
           :aria-label="copy.deletePhrase"
           :disabled="busy"
           @click="remove"
         >
-          <Trash2 :size="15" />
-        </button>
-      </div>
-      <h1 class="mb-5 text-lg font-semibold">{{ adding ? copy.addPhrase : copy.phraseEdit }}</h1>
-      <label class="block text-xs text-muted"
-        >{{ copy.phraseBody }}
-        <textarea
-          v-model="editor.text"
-          rows="5"
-          :placeholder="copy.phrasePlaceholder"
-          class="mt-2 block w-full resize-y rounded-lg border border-line bg-paper p-3 text-sm leading-relaxed text-ink outline-none focus:border-line-strong"
-          @input="schedule"
-          @blur="flushEditor"
-        />
-      </label>
-      <h2 class="mb-3 mt-6 text-xs font-medium">
-        {{ copy.phraseSource
-        }}<span class="ml-2 font-normal text-faint">{{ copy.phraseOptional }}</span>
-      </h2>
-      <div class="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2">
-        <label class="block min-w-0 text-xs text-muted"
-          >{{ copy.phraseAuthor
-          }}<input
-            v-model="editor.author"
-            type="text"
-            :placeholder="copy.phraseAuthorPlaceholder"
-            class="mt-2 block h-10 w-full min-w-0 rounded-lg border border-line bg-paper px-3 text-left text-sm text-ink focus-visible:outline-none focus:border-line-strong"
+          <Trash2 :size="16" /></button
+      ></template>
+      <div v-if="editor" class="min-w-0">
+        <label class="block text-xs text-muted"
+          >{{ copy.phraseBody }}
+          <textarea
+            v-model="editor.text"
+            rows="5"
+            :placeholder="copy.phrasePlaceholder"
+            class="mt-2 block w-full resize-y rounded-lg border border-line bg-paper p-3 text-sm leading-relaxed text-ink outline-none focus:border-line-strong"
             @input="schedule"
             @blur="flushEditor"
-        /></label>
-        <label class="block min-w-0 text-xs text-muted"
-          >{{ copy.phraseWork
-          }}<input
-            v-model="editor.source_title"
-            type="text"
-            :placeholder="copy.phraseWorkPlaceholder"
-            class="mt-2 block h-10 w-full min-w-0 rounded-lg border border-line bg-paper px-3 text-left text-sm text-ink focus-visible:outline-none focus:border-line-strong"
-            @input="schedule"
-            @blur="flushEditor"
-        /></label>
-      </div>
-      <section class="mt-7 border-t border-line pt-4" :aria-label="copy.phrasePreview">
-        <h2 class="mb-3 text-xs text-faint">{{ copy.phrasePreview }}</h2>
-        <div class="px-3 py-3 text-center">
-          <p
-            class="whitespace-pre-wrap break-words text-sm leading-relaxed"
-            :class="editor.text.trim() ? 'text-ink' : 'text-faint'"
-          >
-            {{ editor.text.trim() || copy.phrasePreviewEmpty }}
-          </p>
-          <p
-            v-if="libraryAttribution(editor)"
-            class="mt-2 break-words text-xs leading-relaxed text-faint"
-          >
-            {{ libraryAttribution(editor) }}
-          </p>
+          />
+        </label>
+        <h2 class="mb-3 mt-6 text-xs font-medium">
+          {{ copy.phraseSource
+          }}<span class="ml-2 font-normal text-faint">{{ copy.phraseOptional }}</span>
+        </h2>
+        <div class="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2">
+          <label class="block min-w-0 text-xs text-muted"
+            >{{ copy.phraseAuthor
+            }}<input
+              v-model="editor.author"
+              type="text"
+              :placeholder="copy.phraseAuthorPlaceholder"
+              class="mt-2 block h-10 w-full min-w-0 rounded-lg border border-line bg-paper px-3 text-left text-sm text-ink focus-visible:outline-none focus:border-line-strong"
+              @input="schedule"
+              @blur="flushEditor"
+          /></label>
+          <label class="block min-w-0 text-xs text-muted"
+            >{{ copy.phraseWork
+            }}<input
+              v-model="editor.source_title"
+              type="text"
+              :placeholder="copy.phraseWorkPlaceholder"
+              class="mt-2 block h-10 w-full min-w-0 rounded-lg border border-line bg-paper px-3 text-left text-sm text-ink focus-visible:outline-none focus:border-line-strong"
+              @input="schedule"
+              @blur="flushEditor"
+          /></label>
         </div>
-      </section>
-    </template>
+        <section class="mt-7 border-t border-line pt-4" :aria-label="copy.phrasePreview">
+          <h2 class="mb-3 text-xs text-faint">{{ copy.phrasePreview }}</h2>
+          <div class="px-3 py-3 text-center">
+            <p
+              class="whitespace-pre-wrap break-words text-sm leading-relaxed"
+              :class="editor.text.trim() ? 'text-ink' : 'text-faint'"
+            >
+              {{ editor.text.trim() || copy.phrasePreviewEmpty }}
+            </p>
+            <p
+              v-if="libraryAttribution(editor)"
+              class="mt-2 break-words text-xs leading-relaxed text-faint"
+            >
+              {{ libraryAttribution(editor) }}
+            </p>
+          </div>
+        </section>
+      </div>
+    </SettingsSubpage>
   </section>
 </template>

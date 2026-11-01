@@ -9,7 +9,7 @@ import { dialogConfirmStyle } from '../shared/series/rest';
 import SeriesCollection from '../shared/series/SeriesCollection.vue';
 import SettingsView from '../features/settings/SettingsView.vue';
 import HistoryView from '../features/history/HistoryView.vue';
-import { locale } from '../shared/i18n';
+import { copy, locale } from '../shared/i18n';
 import type { Settings, Snapshot, ThemeOptionsChange } from '../shared/ipc/types';
 import { previewCounts, seriesFixtures } from './seriesFixtures';
 const query = new URLSearchParams(location.search);
@@ -205,6 +205,7 @@ const caption = computed(() =>
     <div v-else class="mx-auto max-w-[620px]">
       <HistoryView
         v-if="view === 'history'"
+        :correct-record="async () => copy.previewHint"
         :records="records"
         :busy="false"
         :current="null"

@@ -161,16 +161,20 @@ pub fn clear_sessions(app: tauri::AppHandle, state: State<'_, AppState>) -> Resu
 }
 #[tauri::command]
 pub fn correct_session(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
-    title: String,
-    minutes: f64,
+    started_at_ms: Option<i64>,
+    ended_at_ms: Option<i64>,
+    task_id: Option<String>,
 ) -> Result<(), String> {
     state
         .0
         .lock()
         .map_err(|_| "runtime_unavailable")?
-        .correct(&id, &title, minutes)
+        .correct_in_task(&id, started_at_ms, ended_at_ms, task_id)?;
+    let _ = app.emit("records:changed", ());
+    Ok(())
 }
 #[tauri::command]
 pub fn export_csv(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -213,4 +217,48 @@ pub fn popup_prepared(window: tauri::WebviewWindow) -> Result<(), String> {
         return Err("invalid_timer_window".into());
     }
     crate::platform::windows::prepared(window.app_handle())
+}
+
+#[tauri::command]
+pub fn create_task(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .create_task(&name)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+#[tauri::command]
+pub fn select_task(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    task_id: Option<String>,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .select_task(task_id)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn manage_tasks(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    change: timer_core::TaskChange,
+) -> Result<Snapshot, String> {
+    let snapshot = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable")?
+        .manage_tasks(change)?;
+    let _ = app.emit("timer:changed", &snapshot);
+    Ok(snapshot)
 }

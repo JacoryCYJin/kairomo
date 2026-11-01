@@ -1,0 +1,2 @@
+CREATE TABLE tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+PRAGMA user_version = 2;

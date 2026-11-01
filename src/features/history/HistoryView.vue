@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Download, Pencil, Trash2, X, Clock3 } from 'lucide-vue-next';
+import MultiSelect from '../../shared/ui/MultiSelect.vue';
+import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
+import { matchesTasks, recordsForTasks, uncategorizedTask } from './taskFilter';
 import { copy, duration, locale, localTime } from '../../shared/i18n';
 import { isCompletedFocus } from '../../shared/completions';
 import SeriesReward from '../../shared/series/SeriesReward.vue';
 import type { SeriesId } from '../../shared/series/types';
 import HistoryCalendar from './HistoryCalendar.vue';
+import RecordTimeField from './RecordTimeField.vue';
 import HistoryRangeFilter from './HistoryRangeFilter.vue';
 import SeriesCollection from '../../shared/series/SeriesCollection.vue';
-import type { Session } from '../../shared/ipc/types';
+import {
+  effectiveMinutes,
+  localDateTime,
+  editTimestamp,
+  correctionDuration,
+  overlappingRecord,
+} from './recordCorrection';
+import type { Task, Session } from '../../shared/ipc/types';
 import {
   dateInput,
   recordStartInPeriod,
@@ -22,7 +33,14 @@ import {
 } from './history';
 import type { HistoryFilter } from './history';
 const props = defineProps<{
+  correctRecord: (
+    id: string,
+    start: number | null,
+    end: number | null,
+    taskId: string | null,
+  ) => Promise<string | null>;
   records: Session[];
+  tasks?: Task[];
   busy: boolean;
   current: Session | null;
   checkpoint: number;
@@ -31,16 +49,96 @@ const props = defineProps<{
 const emit = defineEmits<{
   export: [];
   remove: [string];
-  correct: [id: string, title: string, minutes: number];
 }>();
+const selectedTasks = ref<string[]>([]);
+const taskOptions = computed(() => [
+  ...(props.tasks ?? []).map((task) => ({ value: task.id, label: task.name })),
+  { value: uncategorizedTask, label: copy.value.uncategorized },
+]);
+watch(
+  () => taskOptions.value.map((option) => option.value).join('\0'),
+  () => {
+    const available = new Set(taskOptions.value.map((option) => option.value));
+    selectedTasks.value = selectedTasks.value.filter((id) => available.has(id));
+  },
+);
+const taskRecords = computed(() => recordsForTasks(props.records, selectedTasks.value));
+const taskName = (id?: string | null) =>
+  props.tasks?.find((task) => task.id === id)?.name ?? copy.value.uncategorized;
+const editTask = ref<string | null>(null);
+function removeTaskFilter(id: string) {
+  selectedTasks.value = selectedTasks.value.filter((value) => value !== id);
+}
 const editing = ref<Session | null>(null),
   deleting = ref<Session | null>(null);
-const editTitle = ref(''),
-  editMinutes = ref(1),
-  invalid = ref(false);
+const editStart = ref(''),
+  editEnd = ref(''),
+  saveError = ref(''),
+  saving = ref(false);
+const editedBounds = computed(() => {
+  const s = editing.value;
+  return s && s.ended_at_ms !== null
+    ? {
+        start: editTimestamp(editStart.value, s.started_at_ms),
+        end: editTimestamp(editEnd.value, s.ended_at_ms),
+      }
+    : { start: null, end: null };
+});
+const editPreview = computed(() => {
+  const s = editing.value;
+  const { start, end } = editedBounds.value;
+  if (!s || start === null || end === null || end <= start)
+    return { error: copy.value.recordTimeInvalid, duration: null };
+  const changed = start !== s.started_at_ms || end !== s.ended_at_ms;
+  const effective = correctionDuration(s, start, end);
+  if (!changed) return { error: '', duration: effective };
+  if (end > Date.now()) return { error: copy.value.recordTimeFuture, duration: effective };
+  if (effective <= 0 || effective > 86400000)
+    return { error: copy.value.recordNoEffective, duration: effective };
+  const overlap = overlappingRecord(props.records, s.id, start, end);
+  if (overlap) {
+    const format = (ms: number) =>
+      new Date(ms).toLocaleString(locale.value, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+    return {
+      error:
+        copy.value.recordOverlap +
+        format(overlap.started_at_ms) +
+        ' — ' +
+        format(overlap.ended_at_ms!),
+      duration: effective,
+    };
+  }
+  const current = props.current;
+  if (current?.kind === 'focus' && current.intervals.length && end > current.started_at_ms)
+    return { error: copy.value.recordOverlapCurrent, duration: effective };
+  return { error: '', duration: effective };
+});
+const editDurationLabel = computed(() => {
+  if (editPreview.value.duration === null) return '—';
+  const minutes = effectiveMinutes(editPreview.value.duration);
+  if (minutes === null) return copy.value.recordUnderMinute;
+  return minutes < 60
+    ? copy.value.recordApproxMinutes.replace('{count}', String(minutes))
+    : copy.value.recordApproxHours
+        .replace('{hours}', String(Math.floor(minutes / 60)))
+        .replace('{minutes}', String(minutes % 60));
+});
+watch([editStart, editEnd, editTask], () => {
+  saveError.value = '';
+});
 const modal = ref<HTMLDialogElement | null>(null);
 const deleteHeading = ref<HTMLHeadingElement | null>(null);
 const loadTrigger = ref<HTMLDivElement | null>(null);
+const calendarColumn = ref<HTMLDivElement | null>(null);
+const collectionHeight = ref<number>();
+let columnObserver: ResizeObserver | undefined;
 let loadObserver: IntersectionObserver | undefined;
 const now = ref(new Date()),
   range = ref<HistoryFilter>('day');
@@ -51,6 +149,18 @@ const from = ref(anchor.value),
   visibleCount = ref(50);
 let clockTick: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  if (calendarColumn.value) {
+    columnObserver = new ResizeObserver(() => {
+      const column = calendarColumn.value;
+      if (!column) return;
+      const custom = column.querySelector<HTMLElement>('[data-history-custom]');
+      const extra = custom
+        ? custom.getBoundingClientRect().height + parseFloat(getComputedStyle(custom).marginTop)
+        : 0;
+      collectionHeight.value = column.getBoundingClientRect().height - extra;
+    });
+    columnObserver.observe(calendarColumn.value);
+  }
   clockTick = setInterval(() => {
     const next = new Date();
     if (anchor.value === dateInput(now.value) && dateInput(next) !== dateInput(now.value))
@@ -59,6 +169,7 @@ onMounted(() => {
   }, 30000);
 });
 onUnmounted(() => {
+  columnObserver?.disconnect();
   clearInterval(clockTick);
   loadObserver?.disconnect();
 });
@@ -69,17 +180,17 @@ const period = computed(() =>
     : periodFor(range.value, anchorDate.value),
 );
 const sessions = computed(() =>
-  props.current
-    ? [props.current, ...props.records.filter((s) => s.id !== props.current?.id)]
-    : props.records,
+  props.current && matchesTasks(props.current, selectedTasks.value)
+    ? [props.current, ...taskRecords.value.filter((s) => s.id !== props.current?.id)]
+    : taskRecords.value,
 );
 const filtered = computed(() =>
-  historyRecords(props.records, period.value, props.checkpoint).filter(isCompletedFocus),
+  historyRecords(taskRecords.value, period.value, props.checkpoint).filter(isCompletedFocus),
 );
 const total = computed(() =>
   totalInPeriod(sessions.value, 'focus', period.value, props.checkpoint),
 );
-const completedRecords = computed(() => earnedBeans(props.records, period.value));
+const completedRecords = computed(() => earnedBeans(taskRecords.value, period.value));
 const groups = computed(() => {
   const result: { date: string; records: Session[] }[] = [];
   for (const session of filtered.value.slice(0, visibleCount.value)) {
@@ -93,7 +204,7 @@ const groups = computed(() => {
   }
   return result.sort((a, b) => b.date.localeCompare(a.date));
 });
-watch([range, anchor, from, to], () => {
+watch([range, anchor, from, to, selectedTasks], () => {
   visibleCount.value = 50;
 });
 watch(
@@ -152,9 +263,10 @@ function recordTime(session: Session) {
 async function edit(s: Session) {
   editing.value = s;
   deleting.value = null;
-  editTitle.value = s.title;
-  editMinutes.value = Math.max(0.01, Math.round(s.duration_ms / 600) / 100);
-  invalid.value = false;
+  editTask.value = s.task_id ?? null;
+  editStart.value = localDateTime(s.started_at_ms);
+  editEnd.value = localDateTime(s.ended_at_ms!);
+  saveError.value = '';
   await nextTick();
   modal.value?.showModal();
 }
@@ -166,17 +278,38 @@ async function askDelete(s: Session) {
   deleteHeading.value?.focus({ preventScroll: true });
 }
 function close() {
+  if (saving.value) return;
   modal.value?.close();
   editing.value = null;
   deleting.value = null;
 }
-function submit() {
-  if (!Number.isFinite(editMinutes.value) || editMinutes.value < 0.01 || editMinutes.value > 1440) {
-    invalid.value = true;
+async function submit() {
+  if (saving.value || props.busy || !editing.value) return;
+  if (editPreview.value.error) {
+    saveError.value = editPreview.value.error;
     return;
   }
-  if (editing.value) emit('correct', editing.value.id, editTitle.value, editMinutes.value);
-  close();
+  const record = editing.value;
+  const { start, end } = editedBounds.value;
+  const changed = start !== record.started_at_ms || end !== record.ended_at_ms;
+  saving.value = true;
+  try {
+    const failure = await props.correctRecord(
+      record.id,
+      changed ? start : null,
+      changed ? end : null,
+      editTask.value,
+    );
+    if (failure) saveError.value = failure;
+    else {
+      saving.value = false;
+      close();
+    }
+  } catch {
+    saveError.value = copy.value.error;
+  } finally {
+    saving.value = false;
+  }
 }
 </script>
 <template>
@@ -194,7 +327,7 @@ function submit() {
     <div
       class="mb-7 mt-4 grid grid-cols-[minmax(0,1fr)_minmax(200px,0.95fr)] items-stretch gap-4 border-b border-line pb-5"
     >
-      <div class="flex min-w-0 flex-col" data-history-calendar-column>
+      <div ref="calendarColumn" class="flex min-w-0 flex-col" data-history-calendar-column>
         <HistoryRangeFilter
           :range="range"
           :from="from"
@@ -216,7 +349,11 @@ function submit() {
           @today="selectDate(dateInput(new Date()))"
         />
       </div>
-      <div class="flex min-w-0 flex-col items-center" data-history-collection-column>
+      <div
+        class="flex min-w-0 flex-col items-center"
+        :style="collectionHeight === undefined ? undefined : { height: `${collectionHeight}px` }"
+        data-history-collection-column
+      >
         <SeriesCollection
           class="!h-auto min-h-0 w-full flex-1"
           :records="filtered"
@@ -233,11 +370,43 @@ function submit() {
         </p>
       </div>
     </div>
-    <div class="mb-2 flex items-center justify-between">
-      <span class="eyebrow">{{ copy.historyEntries }}</span
-      ><span class="text-xs text-faint tabular-nums">{{
-        filtered.length.toString().padStart(2, '0')
-      }}</span>
+    <div
+      class="mb-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+      data-task-header
+    >
+      <span class="eyebrow">{{ copy.historyEntries }}</span>
+      <div class="flex min-w-0 flex-wrap items-center gap-2" data-selected-task-tags>
+        <span
+          v-for="id in selectedTasks"
+          :key="id"
+          class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-line bg-surface-muted px-2 py-1 text-xs text-ink"
+          ><span
+            class="truncate"
+            :title="id === uncategorizedTask ? copy.uncategorized : taskName(id)"
+            >{{ id === uncategorizedTask ? copy.uncategorized : taskName(id) }}</span
+          ><button
+            type="button"
+            class="shrink-0 rounded text-muted hover:text-ink"
+            :aria-label="
+              copy.removeTaskFilter + (id === uncategorizedTask ? copy.uncategorized : taskName(id))
+            "
+            @click="removeTaskFilter(id)"
+          >
+            <X :size="12" /></button
+        ></span>
+      </div>
+      <div class="flex shrink-0 items-center gap-3">
+        <MultiSelect
+          id="history-tasks"
+          :label="copy.filterTasks"
+          :selected="selectedTasks"
+          :options="taskOptions"
+          :disabled="busy"
+          @update:selected="selectedTasks = $event"
+        /><span class="text-xs text-faint tabular-nums">{{
+          filtered.length.toString().padStart(2, '0')
+        }}</span>
+      </div>
     </div>
     <div v-if="!filtered.length" class="py-14 text-center text-faint">
       <Clock3 class="mx-auto" :size="30" stroke-width="1" />
@@ -254,9 +423,12 @@ function submit() {
       >
         <SeriesReward :series-id="seriesId" class="size-5" :duration="s.duration_ms" />
         <div class="min-w-0 flex-1">
-          <strong class="block truncate text-sm font-normal">{{ s.title || copy.untitled }}</strong
+          <strong class="block truncate text-sm font-normal">{{
+            s.title || (s.task_id ? taskName(s.task_id) : copy.untitled)
+          }}</strong
           ><span class="mt-1.5 block text-xs text-faint"
-            >{{ recordTime(s) }}<span v-if="s.corrected"> · {{ copy.corrected }}</span></span
+            >{{ recordTime(s) }}<span v-if="s.title && s.task_id"> · {{ taskName(s.task_id) }}</span
+            ><span v-if="s.corrected"> · {{ copy.corrected }}</span></span
           >
         </div>
         <span class="hidden shrink-0 text-xs text-muted wide:inline">{{ copy.focus }}</span
@@ -289,31 +461,86 @@ function submit() {
     <dialog
       ref="modal"
       class="modal"
+      :class="editing ? '!w-80 !rounded-xl !p-5 !shadow-lg' : undefined"
       :aria-labelledby="deleting ? 'delete-record-title' : undefined"
-      @cancel="close"
+      @cancel="saving ? $event.preventDefault() : close()"
     >
       <form v-if="editing" @submit.prevent="submit">
-        <div class="modal-heading">
-          <h2>{{ copy.edit }}</h2>
-          <button type="button" class="icon-button" :aria-label="copy.cancel" @click="close">
-            <X :size="18" />
+        <div class="modal-heading !mb-3">
+          <h2 class="!text-base !leading-7">{{ copy.edit }}</h2>
+          <button
+            type="button"
+            class="icon-button group enabled:hover:!bg-transparent"
+            :aria-label="copy.cancel"
+            @click="close"
+          >
+            <span class="flex size-6 items-center justify-center rounded-md group-hover:bg-hover">
+              <X :size="14" />
+            </span>
           </button>
         </div>
-        <label>{{ copy.title }}<input v-model="editTitle" maxlength="160" autofocus /></label
-        ><label
-          >{{ copy.duration
-          }}<input
-            v-model.number="editMinutes"
-            type="number"
-            min="0.01"
-            max="1440"
-            step="0.01"
-            required
-        /></label>
-        <p v-if="invalid" role="alert">{{ copy.invalidDuration }}</p>
-        <div class="modal-actions">
-          <button type="button" class="button secondary" @click="close">{{ copy.cancel }}</button
-          ><button class="button primary" type="submit">{{ copy.save }}</button>
+        <div class="flex min-h-9 items-center justify-between gap-3">
+          <span class="text-xs text-muted">{{ copy.taskCategory }}</span
+          ><SettingsSelect
+            id="record-task"
+            :label="copy.taskCategory"
+            :model-value="editTask ?? ''"
+            :options="[
+              { value: '', label: copy.uncategorized },
+              ...(tasks ?? []).map((task) => ({ value: task.id, label: task.name })),
+            ]"
+            :disabled="busy || saving"
+            @update:model-value="editTask = $event || null"
+          />
+        </div>
+        <RecordTimeField
+          id="correction-start"
+          :label="copy.recordStart"
+          v-model="editStart"
+          :disabled="busy || saving"
+        />
+        <p
+          v-if="editPreview.error && editedBounds.start === null"
+          role="alert"
+          class="!my-1 !text-danger"
+        >
+          {{ editPreview.error }}
+        </p>
+        <RecordTimeField
+          id="correction-end"
+          :label="copy.recordEnd"
+          v-model="editEnd"
+          :disabled="busy || saving"
+        />
+        <p
+          v-if="saveError || (editPreview.error && editedBounds.start !== null)"
+          role="alert"
+          class="!my-1 !text-danger"
+        >
+          {{ saveError || editPreview.error }}
+        </p>
+        <div class="mt-4 flex items-center justify-between gap-3 border-t border-line pt-4">
+          <div class="flex flex-col gap-1 text-xs">
+            <span class="text-muted">{{ copy.recordEffective }}</span>
+            <output class="text-sm font-medium tabular-nums">{{ editDurationLabel }}</output>
+          </div>
+          <div class="flex shrink-0 gap-2">
+            <button
+              type="button"
+              class="button h-8 min-h-8 px-3 py-1.5 text-muted enabled:hover:bg-hover"
+              :disabled="saving"
+              @click="close"
+            >
+              {{ copy.cancel }}
+            </button>
+            <button
+              class="button primary h-8 min-h-8 px-3 py-1.5"
+              type="submit"
+              :disabled="busy || saving || !!editPreview.error"
+            >
+              {{ copy.save }}
+            </button>
+          </div>
         </div>
       </form>
       <div v-if="deleting">

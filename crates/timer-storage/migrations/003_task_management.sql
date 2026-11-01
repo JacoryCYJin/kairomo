@@ -1,0 +1,4 @@
+ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+UPDATE tasks SET position = rowid;
+PRAGMA user_version = 3;

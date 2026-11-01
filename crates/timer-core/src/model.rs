@@ -38,6 +38,10 @@ pub enum BeanRange {
     Week,
 }
 
+fn default_retain_task() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
@@ -51,6 +55,8 @@ pub struct Settings {
     pub break_minutes: u32,
     pub locale: String,
     pub notifications: bool,
+    #[serde(default = "default_retain_task")]
+    pub retain_task: bool,
     #[serde(default)]
     pub focus_mode: FocusMode,
     #[serde(default)]
@@ -68,6 +74,7 @@ impl Default for Settings {
             break_minutes: 10,
             locale: "zh-CN".into(),
             notifications: true,
+            retain_task: true,
             focus_mode: FocusMode::Manual,
             appearance: Appearance::System,
             visual_series: default_visual_series(),
@@ -112,6 +119,8 @@ pub struct Session {
     pub id: String,
     pub kind: Kind,
     pub title: String,
+    #[serde(default)]
+    pub task_id: Option<String>,
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
     pub target_ms: u64,
@@ -135,6 +144,10 @@ impl Session {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
+    #[serde(default)]
+    pub tasks: Vec<crate::Task>,
+    #[serde(default)]
+    pub selected_task_id: Option<String>,
     /// Internal visual seed; persisted independently of editable preferences.
     #[serde(default)]
     pub bean_random_seed: Option<String>,
@@ -153,6 +166,8 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            tasks: Vec::new(),
+            selected_task_id: None,
             bean_random_seed: None,
             phrase_selection: None,
             revision: 0,
@@ -169,6 +184,18 @@ impl Default for Snapshot {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimerError {
+    #[error("invalid_task")]
+    InvalidTask,
+    #[error("task_in_use")]
+    TaskInUse,
+    #[error("task_has_records")]
+    TaskHasRecords,
+    #[error("invalid_task_order")]
+    InvalidTaskOrder,
+    #[error("invalid_task_name")]
+    InvalidTaskName,
+    #[error("duplicate_task")]
+    DuplicateTask,
     #[error("invalid_phrases")]
     InvalidPhrases,
     #[error("invalid_transition")]

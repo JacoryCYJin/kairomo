@@ -13,7 +13,9 @@
     @apply min-h-full;
   }
   html.details-window,
-  html.details-window body {
+  html.details-window body,
+  html.timer-window,
+  html.timer-window body {
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -36,7 +38,10 @@
   button:disabled {
     @apply cursor-not-allowed opacity-50;
   }
-  button:focus-visible,
+  button:focus-visible {
+    outline: none;
+    background-color: var(--hover);
+  }
   a:focus-visible {
     outline: 2px solid var(--muted);
     outline-offset: 3px;

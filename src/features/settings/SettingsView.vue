@@ -1,35 +1,62 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import TaskSettings from './TaskSettings.vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { copy } from '../../shared/i18n';
-import type { Preferences, Settings, ThemeOptionsChange } from '../../shared/ipc/types';
+import type {
+  Preferences,
+  Settings,
+  ThemeOptionsChange,
+  Task,
+  Session,
+  TaskChange,
+} from '../../shared/ipc/types';
 import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import UpdateSettings from './UpdateSettings.vue';
 import PhraseSettings from './PhraseSettings.vue';
 import ThemeSettings from './ThemeSettings.vue';
 import RecordSettings from './RecordSettings.vue';
+import { settingsNavigation, type SettingsPage } from './settingsNavigation';
 const props = defineProps<{
   settings: Settings;
+  tasks?: Task[];
+  records?: Session[];
+  current?: Session | null;
+  manageTasks?: (change: TaskChange) => Promise<string | null>;
   busy: boolean;
   clearRecords: () => Promise<boolean>;
 }>();
 const emit = defineEmits<{
   save: [
-    Partial<Pick<Settings, 'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode'>>,
+    Partial<
+      Pick<
+        Settings,
+        'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode' | 'retain_task'
+      >
+    >,
   ];
   preference: [Partial<Preferences>];
   phrases: [Settings['phrases']];
   beanRange: [Settings['bean_range']];
   themeOptions: [ThemeOptionsChange];
 }>();
-const libraryOpen = ref(false);
+const currentPage = ref<SettingsPage>('settings');
+const libraryOpen = computed(
+  () => currentPage.value === 'phrase-library' || currentPage.value === 'phrase-editor',
+);
+const taskPage = computed(() => currentPage.value === 'task-manager');
+async function unavailable() {
+  return copy.value.taskSaveFailed;
+}
 const root = ref<HTMLElement | null>(null);
-let settingsScroll = 0;
-async function phrasePage(open: boolean) {
+const navigation = settingsNavigation();
+let navigationVersion = 0;
+async function navigate(page: SettingsPage) {
   const scroll = root.value?.closest('.details-content');
-  if (open && !libraryOpen.value) settingsScroll = scroll?.scrollTop ?? 0;
-  libraryOpen.value = open;
+  const target = navigation.navigate(page, scroll?.scrollTop ?? 0);
+  const version = ++navigationVersion;
+  currentPage.value = target.page;
   await nextTick();
-  if (scroll) scroll.scrollTop = open ? 0 : settingsScroll;
+  if (scroll && version === navigationVersion) scroll.scrollTop = target.scrollTop;
 }
 const form = reactive({
   focus_minutes: props.settings.focus_minutes,
@@ -80,7 +107,7 @@ function choosePreference(key: keyof Preferences, value: string) {
 <template>
   <section ref="root" class="mx-auto max-w-[580px] pb-2 pt-4">
     <form v-show="!libraryOpen" @submit.prevent="saveDurations">
-      <section :aria-label="copy.timerSettings">
+      <section v-show="!taskPage" :aria-label="copy.timerSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.timerSettings }}</h2>
         <div class="grid auto-rows-fr rounded-xl border border-line bg-surface">
           <label class="flex min-h-[52px] items-center justify-between gap-4 px-3.5 py-1.5">
@@ -184,7 +211,17 @@ function choosePreference(key: keyof Preferences, value: string) {
           </div>
         </div>
       </section>
-      <section class="mt-4" :aria-label="copy.pageSettings">
+      <TaskSettings
+        :tasks="tasks ?? []"
+        :records="records ?? []"
+        :current="current ?? null"
+        :settings="settings"
+        :busy="busy"
+        :manage="manageTasks ?? unavailable"
+        @page="navigate"
+        @retain="emit('save', { retain_task: $event })"
+      />
+      <section v-show="!taskPage" class="mt-4" :aria-label="copy.pageSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.pageSettings }}</h2>
         <div class="rounded-xl border border-line bg-surface">
           <div class="flex min-h-12 items-center justify-between gap-4 px-3.5 py-2">
@@ -223,6 +260,7 @@ function choosePreference(key: keyof Preferences, value: string) {
         </div>
       </section>
       <ThemeSettings
+        v-show="!taskPage"
         :settings="settings"
         :busy="busy"
         @theme="choosePreference('visual_series', $event)"
@@ -230,14 +268,15 @@ function choosePreference(key: keyof Preferences, value: string) {
       />
     </form>
     <PhraseSettings
+      v-show="!taskPage"
       :settings="settings.phrases"
       :busy="busy"
       @save="emit('phrases', $event)"
-      @page="phrasePage"
+      @page="navigate"
     />
-    <div v-show="!libraryOpen">
+    <div v-show="!libraryOpen && !taskPage">
       <RecordSettings :busy="busy" :clear-records="clearRecords" />
     </div>
-    <UpdateSettings v-show="!libraryOpen" />
+    <UpdateSettings v-show="!libraryOpen && !taskPage" />
   </section>
 </template>

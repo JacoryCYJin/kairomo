@@ -7,12 +7,13 @@ use timer_core::{Phase, Repository};
 // Run explicitly: this hits the real public HTTPS endpoints, but never installs.
 #[test]
 #[ignore = "requires public GitHub HTTPS access"]
-fn public_https_discovery_and_manifest_check() {
+fn public_https_channel_download_and_signature_check() {
     tauri::async_runtime::block_on(async {
-        let (version, endpoint) = super::discover_beta_manifest()
+        let manifest = super::fetch_beta_manifest(super::BETA_MANIFEST)
             .await
-            .expect("production release discovery must complete")
-            .expect("a published beta manifest must exist");
+            .expect("fixed HTTPS channel must be readable")
+            .expect("the fixed Beta channel must be published");
+        let version = super::validate_beta_manifest(&manifest).unwrap();
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -33,21 +34,22 @@ fn public_https_discovery_and_manifest_check() {
             .unwrap();
         let update = app
             .updater_builder()
-            .endpoints(vec![endpoint.parse().unwrap()])
+            .endpoints(vec![super::BETA_MANIFEST.parse().unwrap()])
             .unwrap()
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap()
-            .check()
-            .await
-            .expect("public manifest check must complete")
+            .restore_update(manifest)
+            .expect("public manifest must restore without another network request")
             .expect("published beta must be available to the isolated old-version fixture");
         assert_eq!(update.version, version.to_string());
         assert_eq!(update.download_url.scheme(), "https");
-        println!(
-            "Public HTTPS discovery and manifest check: {}",
-            update.version
-        );
+        let bytes = update
+            .download(|_, _| {}, || {})
+            .await
+            .expect("public package download and signature/version verification must pass");
+        assert!(!bytes.is_empty());
+        println!("Fixed public HTTPS channel and signed package verified: {} ({} bytes); no installation", update.version, bytes.len());
     });
 }
 
@@ -125,9 +127,18 @@ fn signed_update_checks_downloads_installs_and_retains_data_in_an_isolated_app()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
-    let update = tauri::async_runtime::block_on(updater.check())
-        .unwrap()
-        .unwrap();
+    let response = tauri::async_runtime::block_on(async {
+        super::release_client()
+            .unwrap()
+            .get(format!("http://{address}/manifest"))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()
+    });
+    let update = updater.restore_update(response).unwrap().unwrap();
     let downloaded = tauri::async_runtime::block_on(update.download(|_, _| {}, || {})).unwrap();
     server.join().unwrap();
     assert_eq!(downloaded, archive);
@@ -162,4 +173,107 @@ fn dev_and_beta_configuration_keep_separate_identities_and_the_legacy_beta_data_
     assert!(beta["plugins"]["updater"]
         .get("dangerousInsecureTransportProtocol")
         .is_none());
+}
+
+#[test]
+fn fixed_channel_http_failures_are_distinct_and_never_look_current() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let valid = serde_json::json!({"version":"9.0.0-beta.1", "platforms":{"darwin-aarch64":{
+        "url":format!("{}v9.0.0-beta.1/package.app.tar.gz", super::ASSET_PREFIX), "signature":"fixture"
+    }}}).to_string();
+    let server = std::thread::spawn(move || {
+        for (mut stream, (code, body)) in listener.incoming().take(5).map(Result::unwrap).zip([
+            (200, valid.as_str()),
+            (404, ""),
+            (403, ""),
+            (429, ""),
+            (200, "not json"),
+        ]) {
+            let mut request = [0u8; 4096];
+            let received = stream.read(&mut request).unwrap();
+            assert!(received > 0);
+            write!(
+                stream,
+                "HTTP/1.1 {code} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        }
+    });
+    tauri::async_runtime::block_on(async {
+        let endpoint = format!("http://{address}/manifest");
+        assert!(super::fetch_beta_manifest(&endpoint)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(super::fetch_beta_manifest(&endpoint)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            super::fetch_beta_manifest(&endpoint).await.unwrap_err(),
+            "update_service_busy"
+        );
+        assert_eq!(
+            super::fetch_beta_manifest(&endpoint).await.unwrap_err(),
+            "update_service_busy"
+        );
+        assert_eq!(
+            super::fetch_beta_manifest(&endpoint).await.unwrap_err(),
+            "update_invalid_release"
+        );
+    });
+    server.join().unwrap();
+}
+
+#[test]
+fn restored_channel_compares_versions_and_reports_missing_platform() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("update_fixture.json")).unwrap();
+    let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+    context.package_info_mut().version = semver::Version::parse("0.1.0-beta.6").unwrap();
+    context.config_mut().plugins.0.insert(
+        "updater".into(),
+        serde_json::json!({"pubkey":fixture["public_key"], "requireSignedVersion":true}),
+    );
+    let app = tauri::test::mock_builder()
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(fixture["public_key"].as_str().unwrap())
+                .build(),
+        )
+        .build(context)
+        .unwrap();
+    let updater = app
+        .updater_builder()
+        .target("darwin-aarch64")
+        .endpoints(vec![super::BETA_MANIFEST.parse().unwrap()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let manifest = |version: &str| {
+        serde_json::json!({"version":version,"platforms":{"darwin-aarch64":{
+            "url":format!("{}v{version}/package.app.tar.gz",super::ASSET_PREFIX),"signature":fixture["signature"]
+        }}})
+    };
+    for version in ["0.1.0-beta.5", "0.1.0-beta.6"] {
+        assert!(updater.restore_update(manifest(version)).unwrap().is_none());
+    }
+    let newer = updater
+        .restore_update(manifest("0.1.0-beta.7"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(newer.version, "0.1.0-beta.7");
+    let mut missing = manifest("0.1.0-beta.7");
+    missing["platforms"] =
+        serde_json::json!({"windows-x86_64":missing["platforms"]["darwin-aarch64"]});
+    let error = updater
+        .restore_update(missing)
+        .err()
+        .expect("missing target must fail");
+    assert_eq!(
+        super::updater_error(error, "update_invalid_release"),
+        "update_platform_unavailable"
+    );
 }

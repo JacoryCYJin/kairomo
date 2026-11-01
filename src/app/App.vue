@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ChartNoAxesColumnIncreasing, SlidersHorizontal, X } from 'lucide-vue-next';
+import TaskPicker from '../shared/ui/TaskPicker.vue';
 import TimerView from '../features/timer/TimerView.vue';
 import { timerLayout } from '../features/timer/timerLayout';
 import HistoryView from '../features/history/HistoryView.vue';
@@ -48,6 +49,17 @@ const dark = computed(
     (state.value.settings.appearance === 'system' && systemDark.value),
 );
 const resting = computed(() => !auxiliary && state.value.current?.kind === 'break');
+const taskPickerVisible = computed(
+  () =>
+    state.value.phase === 'idle' ||
+    (state.value.phase === 'paused' &&
+      state.value.current?.kind === 'focus' &&
+      state.value.current.intervals.length === 0),
+);
+const currentTaskName = computed(() => {
+  const taskId = state.value.current?.task_id;
+  return state.value.tasks?.find((task) => task.id === taskId)?.name ?? copy.value.uncategorized;
+});
 const visualSeries = computed(() => state.value.settings.visual_series);
 const restStyle = computed(() => seriesThemeStyle(visualSeries.value, dark.value, resting.value));
 const confirmStyle = computed(() => dialogConfirmStyle(visualSeries.value, dark.value));
@@ -167,7 +179,7 @@ async function open(view: 'history' | 'settings') {
   }
 }
 onMounted(async () => {
-  if (auxiliary) document.documentElement.classList.add('details-window');
+  document.documentElement.classList.add(auxiliary ? 'details-window' : 'timer-window');
   if (!auxiliary && desktop) {
     const info = await updates.info().catch(() => null);
     if (!disposed) {
@@ -200,7 +212,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
-  if (auxiliary) document.documentElement.classList.remove('details-window');
+  document.documentElement.classList.remove(auxiliary ? 'details-window' : 'timer-window');
   disposed = true;
   startup.dispose();
   unlisten?.();
@@ -214,7 +226,7 @@ onUnmounted(() => {
     :class="
       auxiliary
         ? 'details-shell flex h-screen flex-col overflow-hidden bg-paper'
-        : 'timer-shell group relative h-screen select-none overflow-auto bg-paper focus:outline-none'
+        : 'timer-shell group relative h-screen select-none overflow-hidden overscroll-none bg-paper focus:outline-none'
     "
     :tabindex="auxiliary ? undefined : -1"
     :style="[restStyle, confirmStyle]"
@@ -222,24 +234,46 @@ onUnmounted(() => {
   >
     <header
       v-if="!auxiliary"
-      class="absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-between px-3.5 pt-2.5"
+      class="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-between px-3.5 pt-2.5 opacity-0 [&:has(:focus-visible)]:pointer-events-auto [&:has(:focus-visible)]:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [&:has([aria-expanded=true])]:pointer-events-auto [&:has([aria-expanded=true])]:opacity-100 [&:has([data-task-interacting=true])]:pointer-events-auto [&:has([data-task-interacting=true])]:opacity-100"
     >
+      <div class="flex items-center gap-2">
+        <button
+          class="icon-button"
+          :aria-label="copy.hideTimer"
+          :title="copy.hideTimer"
+          @click="hideTimer"
+        >
+          <X :size="15" />
+        </button>
+        <span
+          v-if="development"
+          class="pointer-events-none text-xs font-medium tracking-widest text-muted"
+          >DEV</span
+        >
+      </div>
+      <div
+        v-if="taskPickerVisible"
+        class="absolute left-1/2 top-[17px] -translate-x-[72px]"
+        data-task-picker
+      >
+        <TaskPicker
+          :tasks="state.tasks ?? []"
+          :selected="state.selected_task_id ?? null"
+          :busy="busy || !ready"
+          :create-task="k.createTask"
+          :select-task="k.selectTask"
+        />
+      </div>
       <span
-        v-if="development"
-        class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-xs font-medium tracking-widest text-muted"
-        >DEV</span
+        v-else-if="state.phase === 'running' && state.current?.kind === 'focus'"
+        class="pointer-events-none absolute left-1/2 top-[17px] max-w-[144px] -translate-x-1/2 truncate text-xs font-medium leading-5 text-ink"
+        :title="currentTaskName"
+        data-current-task
+        >{{ currentTaskName }}</span
       >
-      <button
-        class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-        :aria-label="copy.hideTimer"
-        :title="copy.hideTimer"
-        @click="hideTimer"
-      >
-        <X :size="15" />
-      </button>
       <div class="flex gap-0.5">
         <button
-          class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          class="icon-button"
           :aria-label="copy.history"
           :title="copy.history"
           @click="open('history')"
@@ -247,7 +281,7 @@ onUnmounted(() => {
           <ChartNoAxesColumnIncreasing :size="17" />
         </button>
         <button
-          class="icon-button pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          class="icon-button"
           :aria-label="copy.settings"
           :title="copy.settings"
           @click="open('settings')"
@@ -326,18 +360,23 @@ onUnmounted(() => {
         <HistoryView
           v-if="view === 'history'"
           :records="records"
+          :tasks="state.tasks ?? []"
           :busy="busy || !ready"
           :current="state.current"
           :checkpoint="state.checkpoint_at_ms"
           :series-id="state.settings.visual_series"
           @export="k.exportRecords"
           @remove="k.remove"
-          @correct="k.correct"
+          :correct-record="k.correct"
         />
         <SettingsView
           v-else
           :settings="state.settings"
           :clear-records="k.clearRecords"
+          :tasks="state.tasks ?? []"
+          :records="records"
+          :current="state.current"
+          :manage-tasks="k.manageTasks"
           :busy="busy || !ready"
           @save="k.configure"
           @preference="k.preferences"

@@ -4,14 +4,16 @@ import { Check, RefreshCw } from 'lucide-vue-next';
 import { copy } from '../../shared/i18n';
 import { desktop } from '../../shared/ipc/client';
 import { updates } from '../../shared/ipc/updates';
+import { updateFailureKey } from '../../shared/ipc/updateErrors';
 import type { ReleaseInfo, UpdateCheck, UpdateProgress } from '../../shared/ipc/updates';
 const info = ref<ReleaseInfo | null>(null);
 const result = ref<UpdateCheck | null>(null);
 const progress = ref<UpdateProgress | null>(null);
 const showResult = ref(false);
 let resultTimer: ReturnType<typeof setTimeout> | undefined;
-const busy = ref(false),
-  failed = ref(false);
+const busy = ref(false);
+const failure = ref<ReturnType<typeof updateFailureKey> | null>(null);
+const failed = computed(() => failure.value !== null);
 let disposed = false,
   unlisten: (() => void) | undefined;
 onMounted(async () => {
@@ -23,8 +25,8 @@ onMounted(async () => {
     });
     if (disposed) stop();
     else unlisten = stop;
-  } catch {
-    failed.value = true;
+  } catch (error) {
+    failure.value = updateFailureKey(error, 'check');
   }
 });
 onUnmounted(() => {
@@ -33,7 +35,7 @@ onUnmounted(() => {
   unlisten?.();
 });
 const message = computed(() => {
-  if (failed.value) return copy.value.updateFailed;
+  if (failure.value) return copy.value[failure.value];
   if (progress.value?.stage === 'installing') return copy.value.updateInstalling;
   if (progress.value) {
     const percent = progress.value.total
@@ -68,7 +70,7 @@ async function check() {
   clearTimeout(resultTimer);
   showResult.value = false;
   busy.value = true;
-  failed.value = false;
+  failure.value = null;
   progress.value = null;
   result.value = null;
   try {
@@ -80,8 +82,8 @@ async function check() {
         showResult.value = false;
       }, 3000);
     }
-  } catch {
-    if (!disposed) failed.value = true;
+  } catch (error) {
+    if (!disposed) failure.value = updateFailureKey(error, 'check');
   } finally {
     if (!disposed) busy.value = false;
   }
@@ -89,12 +91,12 @@ async function check() {
 async function install() {
   if (!result.value?.token || busy.value) return;
   busy.value = true;
-  failed.value = false;
+  failure.value = null;
   progress.value = { stage: 'downloading', downloaded: 0, total: null };
   try {
     await updates.install(result.value.token);
-  } catch {
-    failed.value = true;
+  } catch (error) {
+    failure.value = updateFailureKey(error, 'install');
     progress.value = null;
     result.value = null;
   } finally {
@@ -118,7 +120,7 @@ async function install() {
         :class="failed ? 'text-danger' : 'text-muted'"
         :disabled="!desktop || busy || !info"
         :aria-label="copy.checkUpdates"
-        :title="failed ? copy.updateFailed : copy.checkUpdates"
+        :title="failed ? message : copy.checkUpdates"
         @click="check"
       >
         <Check v-if="showResult && result?.status === 'current' && !busy" :size="14" />
@@ -126,7 +128,10 @@ async function install() {
         {{ buttonLabel }}
       </button>
     </div>
-    <p class="sr-only" role="status">{{ message }}</p>
+    <p v-if="failure" class="mt-1 text-xs leading-relaxed text-danger" role="alert">
+      {{ message }}
+    </p>
+    <p v-else class="sr-only" role="status">{{ message }}</p>
     <div
       v-if="result?.status === 'available'"
       class="mt-3 rounded-lg border border-line bg-surface-muted p-3"
