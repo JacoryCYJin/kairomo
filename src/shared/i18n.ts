@@ -155,6 +155,11 @@ const zh = {
   currentPeriod: '回到当前',
   periodFocus: '所选时段',
   historyEntries: '专注记录',
+  viewList: '列表',
+  viewTimeline: '时间轴',
+  collapseDetail: '收起',
+  timelineZoom: '时间轴缩放',
+  timelineScrollHint: '时间轴，可横向滚动',
   noPeriodRecords: '这个时段还没有记录',
   loadMore: '显示更多',
   exportAll: '导出全部 CSV',
@@ -203,7 +208,7 @@ const zh = {
   historyTitle: '专注记录',
   historySub: '专注、休息与暂停分开计算，未满目标也会保存。',
   export: '导出 CSV',
-  edit: '修正记录',
+  edit: '编辑',
   remove: '删除',
   cancel: '取消',
   save: '保存',
@@ -468,6 +473,11 @@ const en: typeof zh = {
   currentPeriod: 'Back to the current period',
   periodFocus: 'Selected period',
   historyEntries: 'Focus sessions',
+  viewList: 'List',
+  viewTimeline: 'Timeline',
+  collapseDetail: 'Collapse',
+  timelineZoom: 'Timeline zoom',
+  timelineScrollHint: 'Timeline, horizontally scrollable',
   noPeriodRecords: 'No sessions in this period',
   loadMore: 'Show more',
   exportAll: 'Export all records as CSV',
@@ -519,7 +529,7 @@ const en: typeof zh = {
   historySub:
     'Focus sessions of at least 1 minute are saved. Breaks and time spent paused are not counted.',
   export: 'Export CSV',
-  edit: 'Edit session',
+  edit: 'Edit',
   remove: 'Delete',
   cancel: 'Cancel',
   save: 'Save changes',
@@ -789,6 +799,11 @@ const ja: typeof zh = {
   currentPeriod: '現在の期間に戻る',
   periodFocus: '選択した期間',
   historyEntries: '集中の記録',
+  viewList: 'リスト',
+  viewTimeline: 'タイムライン',
+  collapseDetail: 'たたむ',
+  timelineZoom: 'タイムラインの拡大',
+  timelineScrollHint: 'タイムライン（横スクロール可）',
   noPeriodRecords: 'この期間の記録はありません',
   loadMore: 'さらに表示',
   exportAll: 'すべての記録をCSVに書き出す',
@@ -838,7 +853,7 @@ const ja: typeof zh = {
   historyTitle: '集中の記録',
   historySub: '1分以上集中すると記録が保存されます。休憩と一時停止中の時間は含まれません。',
   export: 'CSVに書き出す',
-  edit: '記録を編集',
+  edit: '編集',
   remove: '削除',
   cancel: 'キャンセル',
   save: '保存',
@@ -1099,6 +1114,11 @@ const tw: typeof zh = {
   currentPeriod: '回到目前時段',
   periodFocus: '所選時段',
   historyEntries: '專注紀錄',
+  viewList: '列表',
+  viewTimeline: '時間軸',
+  collapseDetail: '收合',
+  timelineZoom: '時間軸縮放',
+  timelineScrollHint: '時間軸，可橫向捲動',
   noPeriodRecords: '這段期間還沒有紀錄',
   loadMore: '顯示更多',
   exportAll: '將全部紀錄匯出為 CSV',
@@ -1147,7 +1167,7 @@ const tw: typeof zh = {
   historyTitle: '專注紀錄',
   historySub: '專注滿 1 分鐘才會儲存紀錄。休息與暫停期間不計入專注時間。',
   export: '匯出 CSV',
-  edit: '編輯紀錄',
+  edit: '編輯',
   remove: '刪除',
   cancel: '取消',
   save: '儲存',
@@ -1265,11 +1285,19 @@ export function formatBeanCount(count: number): string {
   if (locale.value === 'zh-CN') return `${count} 颗咖啡豆`;
   return `${count} coffee ${count === 1 ? 'bean' : 'beans'}`;
 }
-export function duration(ms: number): string {
+/** Split so a large figure can render its unit smaller without re-deriving the format. */
+export function durationParts(ms: number): { value: string; unit: string } {
   const min = Math.floor(ms / 60000);
   return min >= 60
-    ? `${Math.floor(min / 60)}${copy.value.hourShort} ${min % 60}${copy.value.minShort}`
-    : `${min}${copy.value.minShort}`;
+    ? {
+        value: `${Math.floor(min / 60)}${copy.value.hourShort} ${min % 60}`,
+        unit: copy.value.minShort,
+      }
+    : { value: `${min}`, unit: copy.value.minShort };
+}
+export function duration(ms: number): string {
+  const { value, unit } = durationParts(ms);
+  return `${value}${unit}`;
 }
 export function clock(ms: number): string {
   const sec = Math.ceil(Math.max(ms, 0) / 1000);

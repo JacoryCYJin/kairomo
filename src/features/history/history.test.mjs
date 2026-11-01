@@ -255,3 +255,79 @@ test('month grid starts Monday, handles year boundaries and leaves selection ind
   assert.equal(grid.filter((d) => d.getMonth() === 0).length, 31);
   assert.equal(monthGrid(new Date(2024, 1, 29)).filter((d) => d.getMonth() === 1).length, 29);
 });
+
+test('timeline spans clamp a record to its day and split midnight-spanning records', async () => {
+  const { daySpan } = await import('./history.ts');
+  const day = new Date(2026, 9, 26);
+  const noon = daySpan(at(2026, 10, 26, 12), at(2026, 10, 26, 12, 30), day);
+  assert.equal(noon.left, 50);
+  assert.equal(noon.width, (30 / (24 * 60)) * 100);
+  const overnight = daySpan(at(2026, 10, 25, 23, 40), at(2026, 10, 26, 0, 20), day);
+  assert.equal(overnight.left, 0);
+  assert.equal(overnight.width, (20 / (24 * 60)) * 100);
+  const ongoing = daySpan(at(2026, 10, 26, 8), null, day);
+  assert.equal(ongoing.left, (8 / 24) * 100);
+  assert.equal(ongoing.width, 0);
+});
+
+test('timeline zoom maps a continuous slider position to a visible span', async () => {
+  const { TIMELINE_MAX_SPAN, TIMELINE_MIN_SPAN, timelineScale, zoomPosition, zoomSpan } =
+    await import('./history.ts');
+  assert.equal(zoomSpan(0), TIMELINE_MAX_SPAN);
+  assert.equal(zoomSpan(1), TIMELINE_MIN_SPAN);
+  assert.equal(
+    Math.round(zoomSpan(0.5)),
+    Math.round(Math.sqrt(TIMELINE_MAX_SPAN * TIMELINE_MIN_SPAN)),
+  );
+  for (const position of [0, 0.1, 0.37, 0.5, 0.88, 1]) {
+    assert.ok(Math.abs(zoomPosition(zoomSpan(position)) - position) < 1e-12);
+  }
+  assert.equal(zoomPosition(TIMELINE_MAX_SPAN), 0);
+  assert.equal(zoomPosition(TIMELINE_MIN_SPAN), 1);
+  assert.equal(zoomSpan(-1), TIMELINE_MAX_SPAN);
+  assert.equal(zoomSpan(2), TIMELINE_MIN_SPAN);
+  assert.equal(zoomPosition(5000), 0);
+  assert.equal(zoomPosition(1), 1);
+  assert.equal(timelineScale(1440), 1);
+  assert.equal(timelineScale(30), 48);
+});
+
+test('timeline labels keep about six ticks across continuous zoom spans', async () => {
+  const { timelineStepMs } = await import('./history.ts');
+  assert.equal(timelineStepMs(1440 * 60000), 6 * 3600000);
+  assert.equal(timelineStepMs(720 * 60000), 2 * 3600000);
+  assert.equal(timelineStepMs(360 * 60000), 3600000);
+  assert.equal(timelineStepMs(180 * 60000), 30 * 60000);
+  assert.equal(timelineStepMs(60 * 60000), 10 * 60000);
+  assert.equal(timelineStepMs(30 * 60000), 5 * 60000);
+});
+
+test('timeline ticks align to the local day and only include visible positions', async () => {
+  const { timelineTicks } = await import('./history.ts');
+  const start = at(2026, 9, 26);
+  assert.deepEqual(
+    timelineTicks(start, start, start + 86400000, 6 * 3600000),
+    [0, 6, 12, 18].map((hour) => start + hour * 3600000),
+  );
+  assert.deepEqual(
+    timelineTicks(start, start + 10 * 3600000 + 30000, start + 13 * 3600000, 3600000),
+    [11, 12].map((hour) => start + hour * 3600000),
+  );
+  assert.deepEqual(timelineTicks(start, start, start, 3600000), []);
+});
+
+test('timeline scrolling centers the anchor and clamps at both day edges', async () => {
+  const { timelineScrollLeft, timelineWindow } = await import('./history.ts');
+  const start = at(2026, 9, 26);
+  const day = 86400000;
+  const scale = 8;
+  const width = 600;
+  const left = timelineScrollLeft(start, day, scale, width, start + 13 * 3600000);
+  assert.ok(left > 0);
+  const centered = timelineWindow(start, day, scale, left, width);
+  assert.equal(Math.round((centered.start + centered.end) / 2), start + 13 * 3600000);
+  assert.equal(timelineScrollLeft(start, day, 1, width, start + 13 * 3600000), 0);
+  assert.equal(timelineWindow(start, day, 1, 0, width).end, start + day);
+  const atEnd = timelineScrollLeft(start, day, scale, width, start + day);
+  assert.equal(timelineWindow(start, day, scale, atEnd, width).end, start + day);
+});

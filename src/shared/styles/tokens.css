@@ -26,6 +26,9 @@
   --scrim: #00000045;
   --composer-shadow: 0 2px 12px #00000005, 0 8px 30px #00000003;
   --dialog-shadow: 0 18px 70px #00000020;
+  --history-sheet-background: rgb(255 255 255 / 82%);
+  --history-sheet-edge: rgb(255 255 255 / 80%);
+  --history-sheet-shadow: 0 -6px 24px rgb(0 0 0 / 8%), 0 -1px 3px rgb(0 0 0 / 3%);
   color: var(--ink);
   background: var(--paper);
 }
@@ -52,4 +55,7 @@
   --scrim: #00000085;
   --composer-shadow: 0 2px 16px #0000000c;
   --dialog-shadow: 0 18px 70px #00000060;
+  --history-sheet-background: rgb(32 35 40 / 82%);
+  --history-sheet-edge: rgb(255 255 255 / 12%);
+  --history-sheet-shadow: 0 -6px 24px rgb(0 0 0 / 28%), 0 -1px 3px rgb(0 0 0 / 16%);
 }
