@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue';
 import { ChartNoAxesColumnIncreasing, SlidersHorizontal, X } from 'lucide-vue-next';
 import TaskPicker from '../shared/ui/TaskPicker.vue';
 import TimerView from '../features/timer/TimerView.vue';
@@ -63,6 +63,11 @@ const currentTaskName = computed(() => {
 const visualSeries = computed(() => state.value.settings.visual_series);
 const restStyle = computed(() => seriesThemeStyle(visualSeries.value, dark.value, resting.value));
 const confirmStyle = computed(() => dialogConfirmStyle(visualSeries.value, dark.value));
+watchEffect(() => {
+  for (const [name, value] of Object.entries(confirmStyle.value)) {
+    document.documentElement.style.setProperty(name, value);
+  }
+});
 watch(
   dark,
   (value) => {

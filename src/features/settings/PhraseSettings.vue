@@ -109,7 +109,7 @@ onBeforeUnmount(flushEditor);
               v-model="draft.enabled"
               type="checkbox"
               role="switch"
-              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong checked:bg-ink"
+              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong checked:bg-dialog-confirm"
               @change="save"
             />
             <span

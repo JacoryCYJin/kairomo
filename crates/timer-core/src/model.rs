@@ -63,6 +63,8 @@ pub struct Settings {
     pub appearance: Appearance,
     #[serde(default = "default_visual_series")]
     pub visual_series: String,
+    #[serde(default)]
+    pub task_colors: Vec<String>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -78,6 +80,7 @@ impl Default for Settings {
             focus_mode: FocusMode::Manual,
             appearance: Appearance::System,
             visual_series: default_visual_series(),
+            task_colors: Vec::new(),
         }
     }
 }
@@ -104,6 +107,18 @@ impl Settings {
             return Err(TimerError::InvalidSeries);
         }
         crate::themes::validate_saved_options(&self.theme_options)?;
+        if self.task_colors.len() > 24 {
+            return Err(TimerError::InvalidTaskColor);
+        }
+        let mut seen = std::collections::HashSet::new();
+        for color in &self.task_colors {
+            let Some(normalized) = crate::tasks::normalize_color(Some(color))? else {
+                return Err(TimerError::InvalidTaskColor);
+            };
+            if !seen.insert(normalized) {
+                return Err(TimerError::InvalidTaskColor);
+            }
+        }
         Ok(())
     }
 }
@@ -188,12 +203,12 @@ pub enum TimerError {
     InvalidTask,
     #[error("task_in_use")]
     TaskInUse,
-    #[error("task_has_records")]
-    TaskHasRecords,
     #[error("invalid_task_order")]
     InvalidTaskOrder,
     #[error("invalid_task_name")]
     InvalidTaskName,
+    #[error("invalid_task_color")]
+    InvalidTaskColor,
     #[error("duplicate_task")]
     DuplicateTask,
     #[error("invalid_phrases")]
@@ -210,6 +225,38 @@ pub enum TimerError {
     InvalidLocale,
     #[error("title_too_long")]
     TitleTooLong,
+}
+
+#[cfg(test)]
+mod task_color_settings_tests {
+    use super::*;
+    #[test]
+    fn custom_task_colors_are_optional_and_validated() {
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("task_colors");
+        let legacy: Settings = serde_json::from_value(legacy).unwrap();
+        assert!(legacy.task_colors.is_empty());
+        let mut settings = Settings {
+            task_colors: vec!["#3E63DD".into(), "#e2a336".into()],
+            ..Settings::default()
+        };
+        assert!(settings.validate().is_ok());
+        settings.task_colors = vec!["#3e63dd".into(), "#3E63DD".into()];
+        assert!(matches!(
+            settings.validate(),
+            Err(TimerError::InvalidTaskColor)
+        ));
+        settings.task_colors = vec!["red".into()];
+        assert!(matches!(
+            settings.validate(),
+            Err(TimerError::InvalidTaskColor)
+        ));
+        settings.task_colors = vec!["#3e63dd".into(); 25];
+        assert!(matches!(
+            settings.validate(),
+            Err(TimerError::InvalidTaskColor)
+        ));
+    }
 }
 
 #[cfg(test)]

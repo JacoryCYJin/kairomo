@@ -86,6 +86,9 @@ const taskName = (id?: string | null) =>
 function recordName(session: Session) {
   return session.title || (session.task_id ? taskName(session.task_id) : copy.value.untitled);
 }
+function recordColor(session: Session) {
+  return props.tasks?.find((task) => task.id === session.task_id)?.color ?? null;
+}
 function recordMeta(session: Session) {
   return `${recordTime(session)}${
     session.title && session.task_id ? ` · ${taskName(session.task_id)}` : ''
@@ -572,6 +575,7 @@ async function submit() {
               v-model:span="timelineSpan"
               :groups="groups"
               :name-of="recordName"
+              :color-of="recordColor"
               :time-of="recordTime"
               :checkpoint="checkpoint"
               :series-id="seriesId"
@@ -777,7 +781,7 @@ async function submit() {
               {{ copy.cancel }}
             </button>
             <button
-              class="button primary h-8 min-h-8 px-3 py-1.5"
+              class="button dialog-confirm h-8 min-h-8 px-3 py-1.5"
               type="submit"
               :disabled="busy || saving || !!editPreview.error"
             >

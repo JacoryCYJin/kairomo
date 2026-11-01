@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    'Beta.6 更新通道修复重打包：改用固定 Beta 清单，避免匿名 API 限流；区分检查、下载、验签和安装失败。保留雪山菜单栏三态、边框与留白调整。',
+    'Beta.7：新增记录时间轴与详情浏览；新增分类配色、自定义色板与取色器，分类删除时记录转为未分类，并改进分类拖拽、新建置顶与刻度尺。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

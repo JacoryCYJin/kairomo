@@ -6,15 +6,50 @@ pub struct Task {
     pub name: String,
     #[serde(default)]
     pub archived: bool,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum TaskChange {
-    Create { name: String },
-    Rename { id: String, name: String },
-    Archive { id: String, archived: bool },
-    Delete { id: String },
-    Reorder { ids: Vec<String> },
+    Create {
+        name: String,
+        #[serde(default)]
+        color: Option<String>,
+    },
+    Rename {
+        id: String,
+        name: String,
+    },
+    Update {
+        id: String,
+        name: String,
+        #[serde(default)]
+        color: Option<String>,
+    },
+    Archive {
+        id: String,
+        archived: bool,
+    },
+    Delete {
+        id: String,
+    },
+    Reorder {
+        ids: Vec<String>,
+    },
+}
+
+pub(crate) fn normalize_color(color: Option<&str>) -> Result<Option<String>, TimerError> {
+    let Some(value) = color.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.len() != 7
+        || !value.starts_with('#')
+        || !value[1..].chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(TimerError::InvalidTaskColor);
+    }
+    Ok(Some(value.to_ascii_lowercase()))
 }
 impl Engine {
     pub fn validate_task(&self, id: Option<&str>) -> Result<(), TimerError> {
@@ -43,9 +78,18 @@ impl Engine {
         Ok(())
     }
     pub fn create_task(&mut self, id: String, name: &str) -> Result<(), TimerError> {
-        self.add_task(id, name, true)
+        self.add_task_with_color(id, name, None, true)
     }
     pub fn add_task(&mut self, id: String, name: &str, select: bool) -> Result<(), TimerError> {
+        self.add_task_with_color(id, name, None, select)
+    }
+    pub fn add_task_with_color(
+        &mut self,
+        id: String,
+        name: &str,
+        color: Option<&str>,
+        select: bool,
+    ) -> Result<(), TimerError> {
         let name = name.trim();
         if id.is_empty() || name.is_empty() || name.chars().count() > 40 {
             return Err(TimerError::InvalidTaskName);
@@ -58,11 +102,16 @@ impl Engine {
         {
             return Err(TimerError::DuplicateTask);
         }
-        self.state.tasks.push(Task {
-            id: id.clone(),
-            name: name.into(),
-            archived: false,
-        });
+        let color = normalize_color(color)?;
+        self.state.tasks.insert(
+            0,
+            Task {
+                id: id.clone(),
+                name: name.into(),
+                archived: false,
+                color,
+            },
+        );
         if select {
             self.select_task(Some(id))
         } else {
@@ -77,6 +126,21 @@ impl Engine {
     }
     pub fn rename_task(&mut self, id: &str, name: &str) -> Result<(), TimerError> {
         self.validate_task(Some(id))?;
+        let color = self
+            .state
+            .tasks
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| t.color.clone());
+        self.update_task(id, name, color.as_deref())
+    }
+    pub fn update_task(
+        &mut self,
+        id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<(), TimerError> {
+        self.validate_task(Some(id))?;
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 {
             return Err(TimerError::InvalidTaskName);
@@ -89,12 +153,10 @@ impl Engine {
         {
             return Err(TimerError::DuplicateTask);
         }
-        self.state
-            .tasks
-            .iter_mut()
-            .find(|t| t.id == id)
-            .unwrap()
-            .name = name.into();
+        let color = normalize_color(color)?;
+        let task = self.state.tasks.iter_mut().find(|t| t.id == id).unwrap();
+        task.name = name.into();
+        task.color = color;
         Ok(())
     }
     pub fn archive_task(&mut self, id: &str, archived: bool) -> Result<(), TimerError> {
@@ -113,13 +175,10 @@ impl Engine {
         }
         Ok(())
     }
-    pub fn delete_task(&mut self, id: &str, has_records: bool) -> Result<(), TimerError> {
+    pub fn delete_task(&mut self, id: &str) -> Result<(), TimerError> {
         self.validate_task(Some(id))?;
         if self.task_in_use(id) {
             return Err(TimerError::TaskInUse);
-        }
-        if has_records {
-            return Err(TimerError::TaskHasRecords);
         }
         self.state.tasks.retain(|t| t.id != id);
         if self.state.selected_task_id.as_deref() == Some(id) {
@@ -173,10 +232,7 @@ mod tests {
             e.archive_task("math", true),
             Err(TimerError::TaskInUse)
         ));
-        assert!(matches!(
-            e.delete_task("math", false),
-            Err(TimerError::TaskInUse)
-        ));
+        assert!(matches!(e.delete_task("math"), Err(TimerError::TaskInUse)));
         e.pause(62_501, "manual").unwrap();
         assert!(e.archive_task("math", true).is_err());
         let done = e.finish(62_501).unwrap();
@@ -184,15 +240,63 @@ mod tests {
         assert!(e.state.selected_task_id.is_none());
         assert!(e.select_task(Some("math".into())).is_err());
         assert!(e.validate_task(Some("math")).is_ok());
-        assert!(matches!(
-            e.delete_task("math", true),
-            Err(TimerError::TaskHasRecords)
-        ));
         assert_eq!(done.task_id.as_deref(), Some("math"));
         e.archive_task("math", false).unwrap();
         assert!(e.state.selected_task_id.is_none());
-        e.delete_task("physics", false).unwrap();
+        e.delete_task("physics").unwrap();
         assert_eq!(e.state.tasks[0].name, "数学复习");
+    }
+    #[test]
+    fn new_categories_are_inserted_at_the_top() {
+        let mut e = Engine::default();
+        e.add_task("a".into(), "A", false).unwrap();
+        e.add_task("b".into(), "B", false).unwrap();
+        e.create_task("c".into(), "C").unwrap();
+        assert_eq!(
+            e.state
+                .tasks
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c", "b", "a"]
+        );
+    }
+    #[test]
+    fn deleting_a_category_with_records_removes_only_the_catalog_entry() {
+        let mut e = Engine::default();
+        e.create_task("math".into(), "数学").unwrap();
+        e.start("focus".into(), "习题".into(), 1000).unwrap();
+        e.advance(61_501, 62_501);
+        let done = e.finish(62_501).unwrap();
+        e.delete_task("math").unwrap();
+        assert!(e.state.tasks.is_empty());
+        assert!(e.state.selected_task_id.is_none());
+        assert_eq!(done.task_id.as_deref(), Some("math"));
+    }
+    #[test]
+    fn category_color_is_normalized_preserved_and_rejects_invalid_values() {
+        let mut e = Engine::default();
+        e.add_task_with_color("math".into(), "数学", Some("#E2A336"), false)
+            .unwrap();
+        assert_eq!(e.state.tasks[0].color.as_deref(), Some("#e2a336"));
+        let before = serde_json::to_value(&e.state).unwrap();
+        assert!(matches!(
+            e.update_task("math", "数学", Some("red")),
+            Err(TimerError::InvalidTaskColor)
+        ));
+        assert!(matches!(
+            e.update_task("math", "数学", Some("#12345")),
+            Err(TimerError::InvalidTaskColor)
+        ));
+        assert_eq!(serde_json::to_value(&e.state).unwrap(), before);
+        e.update_task("math", "数学复习", Some("#3E63DD")).unwrap();
+        assert_eq!(e.state.tasks[0].color.as_deref(), Some("#3e63dd"));
+        e.rename_task("math", "数学").unwrap();
+        assert_eq!(e.state.tasks[0].color.as_deref(), Some("#3e63dd"));
+        e.update_task("math", "数学", Some("  ")).unwrap();
+        assert!(e.state.tasks[0].color.is_none());
+        let legacy: Task = serde_json::from_str(r#"{"id":"old","name":"旧分类"}"#).unwrap();
+        assert!(legacy.color.is_none());
     }
     #[test]
     fn invalid_catalog_edits_are_rejected_without_partial_mutation() {

@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-vue-next';
 import { copy } from '../../shared/i18n';
+import { taskColors } from '../../shared/taskColor';
+import ColorPicker from './ColorPicker.vue';
 import SettingsSubpage from './SettingsSubpage.vue';
 import type { Session, Settings, Task, TaskChange } from '../../shared/ipc/types';
 const props = defineProps<{
@@ -23,19 +25,53 @@ const props = defineProps<{
   busy: boolean;
   manage: (change: TaskChange) => Promise<string | null>;
 }>();
-const emit = defineEmits<{ page: ['settings' | 'task-manager']; retain: [boolean] }>();
+const emit = defineEmits<{
+  page: ['settings' | 'task-manager'];
+  retain: [boolean];
+  colors: [string[]];
+}>();
 const opened = ref(false),
   error = ref(''),
   editorOpen = ref(false),
+  pickerOpen = ref(false),
   dragging = ref<string | null>(null);
 const editor = ref<HTMLDialogElement>(),
   deleteDialog = ref<HTMLDialogElement>(),
   field = ref<HTMLInputElement>();
 const editing = ref<string | null>(null),
   deleting = ref<string | null>(null),
-  name = ref('');
+  name = ref(''),
+  color = ref<string | null>(null);
 const active = computed(() => props.tasks.filter((t) => !t.archived));
 const archived = computed(() => props.tasks.filter((t) => t.archived));
+const customColors = computed(() => props.settings.task_colors ?? []);
+const palette = computed(() => [
+  { value: null as string | null, label: copy.value.categoryColorNone, custom: false },
+  ...taskColors.map((value) => ({
+    value: value as string | null,
+    label: `${copy.value.categoryColor} ${value}`,
+    custom: false,
+  })),
+  ...customColors.value.map((value) => ({
+    value: value as string | null,
+    label: `${copy.value.categoryColor} ${value}`,
+    custom: true,
+  })),
+]);
+const paletteColors = computed(() => [...taskColors, ...customColors.value]);
+const customSelected = computed(() => !!color.value && customColors.value.includes(color.value));
+function addColor(value: string) {
+  if (paletteColors.value.includes(value)) return;
+  emit('colors', [...customColors.value, value]);
+  color.value = value;
+  pickerOpen.value = false;
+}
+function removeColor(value: string) {
+  emit(
+    'colors',
+    customColors.value.filter((item) => item !== value),
+  );
+}
 const counts = computed(() => {
   const result = new Map<string, number>();
   for (const record of props.records) {
@@ -43,6 +79,14 @@ const counts = computed(() => {
   }
   return result;
 });
+const deletedRecords = computed(() =>
+  deleting.value ? (counts.value.get(deleting.value) ?? 0) : 0,
+);
+const deleteHint = computed(() =>
+  deletedRecords.value
+    ? copy.value.categoryDeleteRecordsHint.replace('{count}', String(deletedRecords.value))
+    : copy.value.categoryDeleteHint,
+);
 function inUse(id: string) {
   return props.current?.kind === 'focus' && props.current.task_id === id;
 }
@@ -66,6 +110,8 @@ async function edit(task?: Task) {
   error.value = '';
   editing.value = task?.id ?? null;
   name.value = task?.name ?? '';
+  color.value = task?.color ?? null;
+  pickerOpen.value = false;
   editorOpen.value = true;
   editor.value?.showModal();
   await nextTick();
@@ -79,8 +125,8 @@ async function save() {
   if (
     await perform(
       editing.value
-        ? { action: 'rename', id: editing.value, name: name.value.trim() }
-        : { action: 'create', name: name.value.trim() },
+        ? { action: 'update', id: editing.value, name: name.value.trim(), color: color.value }
+        : { action: 'create', name: name.value.trim(), color: color.value },
     )
   )
     editor.value?.close();
@@ -147,7 +193,7 @@ function drop(id: string) {
               :checked="settings.retain_task !== false"
               :disabled="busy"
               @change="emit('retain', ($event.target as HTMLInputElement).checked)"
-              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-ink"
+              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-dialog-confirm"
               type="checkbox"
               role="switch"
               aria-describedby="retain-task-hint" /><span
@@ -190,31 +236,34 @@ function drop(id: string) {
         <div
           v-for="(task, index) in active"
           :key="task.id"
-          class="group flex min-h-14 items-center gap-2 px-2.5 py-2 [&+&]:border-t [&+&]:border-line"
+          class="group flex min-h-12 items-center gap-2 px-2.5 py-2 [&+&]:border-t [&+&]:border-line"
           @dragover.prevent
           @drop.prevent="drop(task.id)"
         >
-          <button
-            type="button"
+          <span
+            role="button"
+            tabindex="0"
             class="flex size-6 shrink-0 cursor-grab items-center justify-center text-faint active:cursor-grabbing"
+            :class="busy ? 'opacity-50' : ''"
             :title="copy.categoryDrag"
             :aria-label="copy.categoryDrag + '：' + task.name"
+            :aria-disabled="busy"
             :draggable="!busy"
-            :disabled="busy"
             @dragstart="dragStart($event, task.id)"
             @dragend="dragging = null"
           >
             <GripVertical :size="14" />
-          </button>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-xs text-ink" :title="task.name">{{ task.name }}</div>
-            <p class="mt-0.5 text-xs text-faint">
-              {{
-                counts.get(task.id)
-                  ? `${counts.get(task.id)} ${copy.recordCount}`
-                  : copy.categoryUnused
-              }}
-            </p>
+          </span>
+          <div class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              class="size-2 shrink-0 rounded-full"
+              :class="task.color ? '' : 'border border-line-strong'"
+              :style="task.color ? { backgroundColor: task.color } : undefined"
+            />
+            <span class="min-w-0 truncate text-xs text-ink" :title="task.name">{{
+              task.name
+            }}</span>
           </div>
           <div
             class="flex shrink-0 items-center gap-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
@@ -261,7 +310,6 @@ function drop(id: string) {
               <Archive :size="13" />
             </button>
             <button
-              v-else
               type="button"
               class="icon-button !size-6"
               :disabled="busy || inUse(task.id)"
@@ -310,7 +358,6 @@ function drop(id: string) {
               >
                 <RotateCcw :size="14" /></button
               ><button
-                v-if="!counts.get(task.id)"
                 type="button"
                 class="icon-button !size-6"
                 :disabled="busy"
@@ -331,6 +378,7 @@ function drop(id: string) {
         class="modal"
         @close="
           editorOpen = false;
+          pickerOpen = false;
           error = '';
         "
         @cancel="busy && $event.preventDefault()"
@@ -357,6 +405,70 @@ function drop(id: string) {
               :placeholder="copy.categoryPlaceholder"
               maxlength="40"
           /></label>
+          <div class="mt-4">
+            <span class="text-xs text-muted">{{ copy.categoryColor }}</span>
+            <div class="mt-2 flex items-center gap-1.5">
+              <div
+                class="record-list-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1"
+                role="group"
+                :aria-label="copy.categoryColor"
+              >
+                <button
+                  v-for="option in palette"
+                  :key="option.value ?? 'none'"
+                  type="button"
+                  class="flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors"
+                  :class="
+                    color === option.value
+                      ? 'border-ink bg-hover'
+                      : 'border-transparent enabled:hover:bg-hover'
+                  "
+                  :aria-label="option.label"
+                  :aria-pressed="color === option.value"
+                  :title="option.label"
+                  :disabled="busy"
+                  @click="color = option.value"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="size-4 rounded-full"
+                    :class="option.value ? '' : 'border border-line-strong'"
+                    :style="option.value ? { backgroundColor: option.value } : undefined"
+                  />
+                </button>
+              </div>
+              <button
+                v-if="customSelected && color"
+                type="button"
+                class="icon-button !size-7 shrink-0"
+                :title="copy.categoryColorRemove"
+                :aria-label="copy.categoryColorRemove"
+                :disabled="busy"
+                @click="removeColor(color)"
+              >
+                <Trash2 :size="13" />
+              </button>
+              <button
+                type="button"
+                class="icon-button !size-7 shrink-0"
+                :title="copy.categoryColorAdd"
+                :aria-label="copy.categoryColorAdd"
+                :aria-expanded="pickerOpen"
+                :disabled="busy"
+                @click="pickerOpen = !pickerOpen"
+              >
+                <Plus :size="14" />
+              </button>
+            </div>
+            <ColorPicker
+              v-if="pickerOpen"
+              :taken="paletteColors"
+              :initial="color"
+              :disabled="busy"
+              @add="addColor"
+              @cancel="pickerOpen = false"
+            />
+          </div>
           <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
           <div class="modal-actions">
             <button
@@ -366,7 +478,9 @@ function drop(id: string) {
               @click="editor?.close()"
             >
               {{ copy.cancel }}</button
-            ><button type="submit" class="button primary" :disabled="busy">{{ copy.save }}</button>
+            ><button type="submit" class="button dialog-confirm" :disabled="busy">
+              {{ copy.save }}
+            </button>
           </div>
         </form>
       </dialog>
@@ -380,7 +494,7 @@ function drop(id: string) {
         @cancel="busy && $event.preventDefault()"
       >
         <h2>{{ copy.categoryDeleteTitle }}</h2>
-        <p>{{ copy.categoryDeleteHint }}</p>
+        <p>{{ deleteHint }}</p>
         <p v-if="error" class="text-xs text-danger" role="alert">{{ error }}</p>
         <div class="modal-actions">
           <button
@@ -390,7 +504,7 @@ function drop(id: string) {
             @click="deleteDialog?.close()"
           >
             {{ copy.cancel }}</button
-          ><button type="button" class="button danger" :disabled="busy" @click="remove">
+          ><button type="button" class="button dialog-confirm" :disabled="busy" @click="remove">
             {{ copy.deleteCategory }}
           </button>
         </div>
