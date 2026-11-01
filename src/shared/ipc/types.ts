@@ -37,6 +37,7 @@ export interface Settings {
   break_minutes: number;
   locale: AppLocale;
   notifications: boolean;
+  retain_task?: boolean;
   focus_mode: FocusMode;
   appearance: Appearance;
   visual_series: SeriesId;
@@ -47,7 +48,19 @@ export interface Interval {
   ended_at_ms: number | null;
   duration_ms: number;
 }
+export type TaskChange =
+  | { action: 'create'; name: string }
+  | { action: 'rename'; id: string; name: string }
+  | { action: 'archive'; id: string; archived: boolean }
+  | { action: 'delete'; id: string }
+  | { action: 'reorder'; ids: string[] };
+export interface Task {
+  archived?: boolean;
+  id: string;
+  name: string;
+}
 export interface Session {
+  task_id?: string | null;
   id: string;
   kind: Kind;
   title: string;
@@ -60,6 +73,8 @@ export interface Session {
   corrected: boolean;
 }
 export interface Snapshot {
+  tasks?: Task[];
+  selected_task_id?: string | null;
   bean_random_seed: string | null;
   phrase_selection?: { session_id: string; entry_id: string | null } | null;
   revision: number;

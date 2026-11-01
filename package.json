@@ -12,7 +12,8 @@
     "format": "prettier --write src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
     "format:check": "prettier --check src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
     "build:beta": "bash scripts/package-beta.sh",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "publish:beta-channel": "node scripts/publish-beta-channel.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

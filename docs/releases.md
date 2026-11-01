@@ -40,7 +40,7 @@ macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依�
 
 ## 检查与安装
 
-设置页“检查更新”只在 Beta 启用。Rust 读取本仓库公开 GitHub Releases，选择带 `latest.json` 的已发布 Beta prerelease，排除 draft、正式版、alpha 和不可用的清单地址，按 SemVer 比较。不能用排除 prerelease 的 GitHub `/releases/latest` 作为 Beta 发现入口。
+设置页“检查更新”只在 Beta 启用。当前开发实现读取下文的固定 Beta 清单，按 SemVer 比较；Beta.5／原始 Beta.6 安装包通过 GitHub Releases REST 列表发现新版，Beta.6 更新通道修复重打包版改用固定清单。不能用排除 prerelease 的 GitHub `/releases/latest` 作为 Beta 发现入口。
 
 没有发布任何 Beta 时，明确显示“Beta 更新通道尚未发布”；网络错误显示失败，不伪装成最新版。检查不自动下载。发现新版后显示版本与发布说明，由用户选择“下载并安装”。
 
@@ -52,7 +52,9 @@ macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依�
 
 本地生成发布素材不代表线上通道可用。用户明确授权发布后，再按 Git 规则提交对应代码、创建 `v<版本>` 标签与 GitHub prerelease，上传对应架构的 DMG、`.app.tar.gz`、`.sig`、`latest.json` 和校验清单。安装包不包含个人数据库、导出、测试密钥或日志。后续版本重复此流程，检查更新会发现更高 Beta 版本。
 
-发布由用户明确授权后手动执行，不启用自动发布流程。
+版本 Release 发布完成后，再按下文提升固定 Beta 通道。发布由用户明确授权后手动执行，不启用自动发布流程。
+
+2026-10-30 按用户明确要求，对 Beta.6 做一次同版本更新通道修复重打包：同时替换版本 Release 的五个发布文件与固定通道清单，不移动原 `v0.1.0-beta.6` 标签；源码提交／合并另行授权。常规通道工具仍拒绝同版本不同清单，后续正常发布应递增 Beta 版本。
 
 ## 验证
 
@@ -62,3 +64,34 @@ macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依�
 - 安装后核对应用标识、版本、签名、数据数量、当前会话及单实例状态；只读检查用户数据，不用真实记录试验取消或完成。
 
 参考：[Tauri 更新](https://v2.tauri.app/plugin/updater/)、[DMG](https://v2.tauri.app/distribute/dmg/)、[macOS 签名](https://v2.tauri.app/distribute/sign/macos/)、[GitHub Releases API](https://docs.github.com/en/rest/releases/releases)。
+
+## 固定 Beta 更新通道
+
+含固定通道修复的客户端直接读取：
+
+```text
+https://github.com/JacoryCYJin/kairomo/releases/download/beta-channel/latest.json
+```
+
+`beta-channel` 是只提供 `latest.json` 的公开 prerelease，不是新的软件版本。清单指向对应 `v<版本>` Release 的不可变更新包；安装包、签名和说明仍归属版本 Release。客户端不再查询 GitHub Releases REST 列表，也不要求用户登录或配置令牌。它读取一次清单，检查 Beta 版本与版本化资源地址后，交给官方 updater 恢复更新对象；更新签名仍须绑定清单宣布的版本。
+
+发布顺序：先打包并发布完整的版本 Beta prerelease，再执行：
+
+```bash
+npm run publish:beta-channel -- --dry-run
+npm run publish:beta-channel
+```
+
+第一条只检查，不改变远程。第二条属于发布操作，仍须用户明确授权；不随打包、提交或合并自动执行。工具检查本地文件与已发布资源的 SHA-256、清单版本及签名版本字段一致后，创建／更新固定清单，并校验公开 HTTPS 内容。不允许把通道切回更低版本；同版本不同清单要求发布新版本。工具使用维护者的 `gh` 登录，凭据不打入客户端。固定通道标签不随软件版本移动，仅更新清单资源。
+
+通道 404／204 表示尚未发布；403／429 显示服务暂时限制请求，网络超时、无效清单、缺少本机架构更新包、下载失败、签名失败、保存／备份失败和安装失败分别显示具体提示。失败不显示“已是最新版”，不自动连续重试。更换清单资源时可能短暂不可用，客户端仍按实际响应显示结果。
+
+Beta.5 和原始 Beta.6 安装包使用旧的 REST 列表入口；创建固定通道不能改变旧客户端代码。Beta.6 更新通道修复重打包版已改用固定清单，手动替换后可等待 Beta.7 测试后续升级。重打包保持 0.1.0-beta.6 版本与原应用身份，不清理数据库；已安装原始 Beta.6 的用户需要手动替换，同版本不会自动提示更新。
+
+验证覆盖固定清单状态响应、Beta 与资源版本一致性、错误分类，以及隔离应用中下载、验签、实际替换和数据保留。公开通道验证可单独运行：
+
+```bash
+cargo test -p kairomo-desktop public_https_channel_download_and_signature_check -- --ignored --nocapture
+```
+
+此项使用生产固定 HTTPS 清单和原公钥下载并验签，只在隔离测试上下文运行，不安装到真实应用，也不访问用户数据库。

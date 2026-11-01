@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    '更新雪山菜单栏：倒计时冰镐、休息营帐、正计时三角旗，三态独立浅深配色；透明菜单栏增加文字同色边框，平衡左右留白；雪山记录零时长显示“尚未启程”，调整统计文字与日期间距。',
+    'Beta.6 更新通道修复重打包：改用固定 Beta 清单，避免匿名 API 限流；区分检查、下载、验签和安装失败。保留雪山菜单栏三态、边框与留白调整。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

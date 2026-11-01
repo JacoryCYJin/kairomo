@@ -10,10 +10,14 @@ import type {
   Session,
   Settings,
   ThemeOptionsChange,
+  TaskChange,
   Snapshot,
 } from './types';
 export const desktop = isTauri();
 export const api = {
+  manageTasks: (change: TaskChange) => invoke<Snapshot>('manage_tasks', { change }),
+  createTask: (name: string) => invoke<Snapshot>('create_task', { name }),
+  selectTask: (taskId: string | null) => invoke<Snapshot>('select_task', { taskId }),
   onTimerOpened: (handler: () => void) => listen('timer:opened', handler),
   detailsView: () => invoke<'history' | 'settings'>('details_view'),
   openDetails: (view: 'history' | 'settings') => invoke<void>('open_details', { view }),
@@ -41,8 +45,12 @@ export const api = {
   delete: (id: string) => invoke<void>('delete_session', { id }),
   clearRecords: () => invoke<void>('clear_sessions'),
   onRecordsChanged: (handler: () => void) => listen('records:changed', handler),
-  correct: (id: string, title: string, minutes: number) =>
-    invoke<void>('correct_session', { id, title, minutes }),
+  correct: (
+    id: string,
+    startedAtMs: number | null,
+    endedAtMs: number | null,
+    taskId: string | null,
+  ) => invoke<void>('correct_session', { id, startedAtMs, endedAtMs, taskId }),
   async export() {
     const path = await save({
       defaultPath: 'kairomo-sessions.csv',

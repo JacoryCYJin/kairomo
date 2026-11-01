@@ -1,4 +1,4 @@
-// Discovery has a 20s timeout and the manifest check a 30s timeout.
+// The fixed manifest request has a 30s timeout.
 // Also bound the IPC wait if the native command never returns a response.
 export async function withUpdateDeadline<T>(
   request: () => Promise<T>,

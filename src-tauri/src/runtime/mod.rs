@@ -1,11 +1,13 @@
+mod corrections;
 mod export;
+mod tasks;
 use std::{
     collections::VecDeque,
     path::Path,
     sync::Mutex,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
-use timer_core::{Engine, Interval, Phase, Repository, Session, Settings, Snapshot, TargetReached};
+use timer_core::{Engine, Phase, Repository, Session, Settings, Snapshot, TargetReached};
 use timer_storage::SqliteRepository;
 use uuid::Uuid;
 
@@ -254,51 +256,6 @@ impl Runtime {
         settings.bean_range = range;
         self.configure(settings)
     }
-    pub fn correct(&mut self, id: &str, title: &str, minutes: f64) -> Result<(), String> {
-        if title.chars().count() > 160 {
-            return Err("title_too_long".into());
-        }
-        if !minutes.is_finite() || !(0.01..=1440.0).contains(&minutes) {
-            return Err("invalid_duration".into());
-        }
-        let mut record = self
-            .repository
-            .sessions()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|s| s.id == id)
-            .ok_or("record_not_found")?;
-        record.title = title.trim().into();
-        record.corrected = true;
-        let duration = (minutes * 60_000.0).round() as u64;
-        // A duration-only correction keeps the original placement and scales its intervals.
-        let old = record.duration_ms;
-        let count = record.intervals.len();
-        let mut remaining = duration;
-        if count == 0 {
-            record.intervals.push(Interval {
-                started_at_ms: record.started_at_ms,
-                ended_at_ms: record.ended_at_ms,
-                duration_ms: duration,
-            });
-        } else {
-            for (index, interval) in record.intervals.iter_mut().enumerate() {
-                let part = if index + 1 == count {
-                    remaining
-                } else if old == 0 {
-                    0
-                } else {
-                    ((interval.duration_ms as u128 * duration as u128) / old as u128) as u64
-                };
-                interval.duration_ms = part;
-                remaining = remaining.saturating_sub(part);
-            }
-        }
-        record.duration_ms = duration;
-        self.repository
-            .update_session(&record)
-            .map_err(|e| e.to_string())
-    }
     pub fn export(&self, path: &str) -> Result<(), String> {
         export::write(
             path,
@@ -518,9 +475,11 @@ mod tests {
                 rt.engine.state.current.as_ref().unwrap().kind,
                 timer_core::Kind::Break
             );
-            rt.correct(&first.id, "=book", 62.0).unwrap();
+            rt.correct_in_task(&first.id, None, None, first.task_id.clone())
+                .unwrap();
             let corrected = rt.repository.sessions().unwrap().remove(0);
-            assert_eq!(corrected.duration_ms, 62 * 60_000);
+            assert_eq!(corrected.duration_ms, first.duration_ms);
+            assert_eq!(corrected.title, first.title);
             assert_eq!(
                 corrected
                     .intervals
@@ -529,7 +488,9 @@ mod tests {
                     .sum::<u64>(),
                 corrected.duration_ms
             );
-            assert!(rt.correct(&first.id, "x", f64::NAN).is_err());
+            assert!(rt
+                .correct_in_task(&first.id, Some(100), Some(99), None)
+                .is_err());
             rt.repository.delete_session(&first.id).unwrap();
             assert!(rt.repository.sessions().unwrap().is_empty());
         });

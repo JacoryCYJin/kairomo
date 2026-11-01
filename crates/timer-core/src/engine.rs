@@ -43,10 +43,16 @@ impl Engine {
             Kind::Focus => self.state.settings.focus_minutes,
             Kind::Break => self.state.settings.break_minutes,
         };
+        let task_id = if kind == Kind::Focus {
+            self.state.selected_task_id.clone()
+        } else {
+            None
+        };
         self.state.current = Some(Session {
             id,
             kind,
             title,
+            task_id,
             started_at_ms: now,
             ended_at_ms: None,
             target_ms: minutes as u64 * 60_000,
@@ -183,6 +189,9 @@ impl Engine {
             }
         }
         session.ended_at_ms = Some(now);
+        if session.kind == Kind::Focus && !self.state.settings.retain_task {
+            self.state.selected_task_id = None;
+        }
         self.state.phase = Phase::Idle;
         self.state.needs_recovery = false;
         self.state.pause_reason = None;

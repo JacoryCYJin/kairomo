@@ -7,6 +7,7 @@ import type {
   Settings,
   Snapshot,
   ThemeOptionsChange,
+  TaskChange,
 } from '../shared/ipc/types';
 import { defaultSeriesId } from '../shared/series/catalog';
 import { emptyPhrases } from '../shared/ipc/types';
@@ -24,6 +25,7 @@ const defaults: Snapshot = {
     break_minutes: 10,
     locale: 'zh-CN',
     notifications: true,
+    retain_task: true,
     focus_mode: 'manual',
     appearance: 'system',
     visual_series: defaultSeriesId,
@@ -105,7 +107,10 @@ export function useKairomo() {
   }
   function configure(
     settings: Partial<
-      Pick<Settings, 'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode'>
+      Pick<
+        Settings,
+        'focus_minutes' | 'break_minutes' | 'notifications' | 'focus_mode' | 'retain_task'
+      >
     >,
   ) {
     return saveSetting(async () => {
@@ -122,11 +127,46 @@ export function useKairomo() {
       await refresh();
     });
   }
-  async function correct(id: string, title: string, minutes: number) {
-    await operate(async () => {
-      await api.correct(id, title, minutes);
+  async function correct(
+    id: string,
+    start: number | null,
+    end: number | null,
+    taskId: string | null,
+  ): Promise<string | null> {
+    if (!ready.value || busy.value) return copy.value.error;
+    busy.value = true;
+    error.value = '';
+    try {
+      await api.correct(id, start, end, taskId);
+    } catch (failure) {
+      const message = String(failure);
+      if (message.startsWith('record_overlap:')) {
+        const [, a, b] = message.split(':');
+        const format = (ms: string) =>
+          new Date(Number(ms)).toLocaleString(locale.value, {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        return copy.value.recordOverlap + format(a) + ' — ' + format(b);
+      }
+      if (message === 'record_overlap_current') return copy.value.recordOverlapCurrent;
+      if (message === 'record_time_future') return copy.value.recordTimeFuture;
+      if (message === 'invalid_record_time') return copy.value.recordTimeInvalid;
+      if (message === 'invalid_duration') return copy.value.recordNoEffective;
+      return copy.value.error;
+    } finally {
+      busy.value = false;
+    }
+    try {
       await refresh();
-    });
+    } catch {
+      error.value = copy.value.error;
+    }
+    return null;
   }
   async function clearRecords(): Promise<boolean> {
     if (!ready.value || busy.value) return false;
@@ -142,6 +182,48 @@ export function useKairomo() {
     await operate(async () => {
       if (await api.export()) notice.value = copy.value.exported;
     });
+  }
+  async function selectTask(id: string | null): Promise<boolean> {
+    let saved = false;
+    await operate(async () => {
+      apply(await api.selectTask(id));
+      saved = true;
+    });
+    return saved;
+  }
+  async function manageTasks(change: TaskChange): Promise<string | null> {
+    if (!ready.value || busy.value) return copy.value.taskSaveFailed;
+    busy.value = true;
+    try {
+      apply(await api.manageTasks(change));
+      return null;
+    } catch (failure) {
+      const message = String(failure);
+      if (message.includes('task_in_use')) return copy.value.taskInUse;
+      if (message.includes('task_has_records')) return copy.value.taskHasRecords;
+      if (message.includes('duplicate_task')) return copy.value.taskDuplicate;
+      if (message.includes('invalid_task_name')) return copy.value.taskNameInvalid;
+      return copy.value.taskSaveFailed;
+    } finally {
+      busy.value = false;
+    }
+  }
+  async function createTask(name: string): Promise<string | null> {
+    if (!ready.value || busy.value) return copy.value.taskSaveFailed;
+    busy.value = true;
+    try {
+      apply(await api.createTask(name));
+      return null;
+    } catch (failure) {
+      const message = String(failure);
+      return message.includes('duplicate_task')
+        ? copy.value.taskDuplicate
+        : message.includes('invalid_task_name')
+          ? copy.value.taskNameInvalid
+          : copy.value.taskSaveFailed;
+    } finally {
+      busy.value = false;
+    }
   }
   onMounted(async () => {
     if (!desktop) return;
@@ -221,6 +303,9 @@ export function useKairomo() {
     error,
     notice,
     connect,
+    createTask,
+    manageTasks,
+    selectTask,
     act,
     cancelSession,
     configure,

@@ -36,9 +36,22 @@ impl SqliteRepository {
             0 => connection.execute_batch(concat!(
                 "BEGIN IMMEDIATE;",
                 include_str!("../migrations/001_initial.sql"),
+                include_str!("../migrations/002_tasks.sql"),
+                include_str!("../migrations/003_task_management.sql"),
                 "COMMIT;"
             ))?,
-            1 => (),
+            1 => connection.execute_batch(concat!(
+                "BEGIN IMMEDIATE;",
+                include_str!("../migrations/002_tasks.sql"),
+                include_str!("../migrations/003_task_management.sql"),
+                "COMMIT;"
+            ))?,
+            2 => connection.execute_batch(concat!(
+                "BEGIN IMMEDIATE;",
+                include_str!("../migrations/003_task_management.sql"),
+                "COMMIT;"
+            ))?,
+            3 => (),
             _ => return Err(StorageError::UnsupportedVersion),
         }
         Ok(Self { connection })
@@ -51,20 +64,54 @@ impl Repository for SqliteRepository {
             .connection
             .query_row("SELECT state FROM checkpoint WHERE id=1", [], |r| r.get(0))
             .optional()?;
-        value
-            .map(|v| serde_json::from_str(&v))
-            .transpose()
-            .map_err(Into::into)
+        let mut state: Option<Snapshot> = value.map(|v| serde_json::from_str(&v)).transpose()?;
+        if let Some(state) = &mut state {
+            let mut query = self
+                .connection
+                .prepare("SELECT id,name,archived FROM tasks ORDER BY position,rowid")?;
+            state.tasks = query
+                .query_map([], |row| {
+                    Ok(timer_core::Task {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        archived: row.get(2)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        Ok(state)
     }
     fn persist(&mut self, state: &Snapshot, completed: &[Session]) -> Result<(), Self::Error> {
         let tx = self.connection.transaction()?;
+        // Remove catalog entries in the same transaction as their selection/checkpoint changes.
+        let existing = {
+            let mut query = tx.prepare("SELECT id FROM tasks")?;
+            let rows = query
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        for id in existing
+            .iter()
+            .filter(|id| !state.tasks.iter().any(|t| &t.id == *id))
+        {
+            tx.execute("DELETE FROM tasks WHERE id=?1", [id])?;
+        }
+        for (position, task) in state.tasks.iter().enumerate() {
+            tx.execute("INSERT INTO tasks(id,name,archived,position) VALUES(?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,archived=excluded.archived,position=excluded.position", params![task.id, task.name, task.archived, position as i64])?;
+        }
+        let mut checkpoint = serde_json::to_value(state)?;
+        checkpoint
+            .as_object_mut()
+            .expect("snapshot object")
+            .remove("tasks");
         for s in completed.iter().filter(|s| s.is_recordable_focus()) {
             tx.execute(
                 "INSERT INTO sessions(id, started_at_ms, data) VALUES(?1, ?2, ?3)",
                 params![s.id, s.started_at_ms, serde_json::to_string(s)?],
             )?;
         }
-        tx.execute("INSERT INTO checkpoint(id,state) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET state=excluded.state", [serde_json::to_string(state)?])?;
+        tx.execute("INSERT INTO checkpoint(id,state) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET state=excluded.state", [serde_json::to_string(&checkpoint)?])?;
         tx.commit()?;
         Ok(())
     }
@@ -98,8 +145,8 @@ impl Repository for SqliteRepository {
     }
     fn update_session(&mut self, s: &Session) -> Result<(), Self::Error> {
         if self.connection.execute(
-            "UPDATE sessions SET data=?1 WHERE id=?2",
-            params![serde_json::to_string(s)?, s.id],
+            "UPDATE sessions SET data=?1, started_at_ms=?3 WHERE id=?2",
+            params![serde_json::to_string(s)?, s.id, s.started_at_ms],
         )? == 0
         {
             return Err(StorageError::NotFound);
@@ -380,8 +427,34 @@ mod tests {
         assert_eq!(saved.duration_ms, 60_000);
         assert_eq!(saved.intervals.len(), 2);
         saved.duration_ms = 30_000;
+        saved.started_at_ms = 2000;
         saved.corrected = true;
         repo.update_session(&saved).unwrap();
+        assert_eq!(
+            repo.connection
+                .query_row(
+                    "SELECT started_at_ms FROM sessions WHERE id='paused'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2000
+        );
+        repo.connection.execute_batch("CREATE TRIGGER reject_correction BEFORE UPDATE ON sessions BEGIN SELECT RAISE(FAIL, 'test write failure'); END;").unwrap();
+        let mut rejected = saved.clone();
+        rejected.started_at_ms = 3000;
+        rejected.duration_ms = 20_000;
+        assert!(repo.update_session(&rejected).is_err());
+        assert_eq!(
+            repo.connection
+                .query_row(
+                    "SELECT started_at_ms FROM sessions WHERE id='paused'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2000
+        );
         assert_eq!(
             repo.sessions()
                 .unwrap()
@@ -404,6 +477,7 @@ mod tests {
                 id: "missing".into(),
                 kind: timer_core::Kind::Focus,
                 title: String::new(),
+                task_id: None,
                 started_at_ms: 0,
                 ended_at_ms: Some(1),
                 target_ms: 1,
@@ -414,5 +488,148 @@ mod tests {
             })
             .is_err());
         assert!(repo.delete_session("missing").is_err());
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+    use timer_core::Engine;
+    #[test]
+    fn version_one_migration_keeps_old_records_and_checkpoint_unclassified() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(include_str!("../migrations/001_initial.sql"))
+            .unwrap();
+        let mut e = Engine::default();
+        e.start("old".into(), "旧任务名称".into(), 1000).unwrap();
+        e.advance(61_001, 62_001);
+        let record = e.finish(62_001).unwrap();
+        let mut json = serde_json::to_value(&record).unwrap();
+        json.as_object_mut().unwrap().remove("task_id");
+        connection
+            .execute(
+                "INSERT INTO sessions VALUES(?1,?2,?3)",
+                params![record.id, record.started_at_ms, json.to_string()],
+            )
+            .unwrap();
+        let mut state = serde_json::to_value(&e.state).unwrap();
+        state.as_object_mut().unwrap().remove("tasks");
+        state.as_object_mut().unwrap().remove("selected_task_id");
+        connection
+            .execute("INSERT INTO checkpoint VALUES(1,?1)", [state.to_string()])
+            .unwrap();
+        let repo = SqliteRepository::from_connection(connection).unwrap();
+        let records = repo.sessions().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].title, "旧任务名称");
+        assert_eq!(records[0].duration_ms, 61_001);
+        assert!(records[0].task_id.is_none());
+        let restored = repo.load_checkpoint().unwrap().unwrap();
+        assert!(restored.tasks.is_empty());
+        assert!(restored.selected_task_id.is_none());
+        assert_eq!(
+            repo.connection
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+                .unwrap(),
+            3
+        );
+    }
+    #[test]
+    fn creating_category_and_selecting_it_roll_back_together_on_checkpoint_failure() {
+        let mut repo =
+            SqliteRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut e = Engine::default();
+        repo.persist(&e.state, &[]).unwrap();
+        repo.connection.execute_batch("CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON checkpoint BEGIN SELECT RAISE(ABORT,'fail'); END;").unwrap();
+        e.create_task("math".into(), "数学").unwrap();
+        assert!(repo.persist(&e.state, &[]).is_err());
+        assert_eq!(
+            repo.connection
+                .query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, u32>(0))
+                .unwrap(),
+            0
+        );
+        assert!(repo.load_checkpoint().unwrap().unwrap().tasks.is_empty());
+        repo.connection
+            .execute_batch("DROP TRIGGER reject_checkpoint")
+            .unwrap();
+        repo.persist(&e.state, &[]).unwrap();
+        let restored = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(restored.tasks[0].name, "数学");
+        assert_eq!(restored.selected_task_id.as_deref(), Some("math"));
+    }
+}
+
+#[cfg(test)]
+mod task_management_tests {
+    use super::*;
+    use timer_core::Engine;
+    #[test]
+    fn version_two_catalog_migrates_in_existing_order_without_touching_records() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(concat!(
+                include_str!("../migrations/001_initial.sql"),
+                include_str!("../migrations/002_tasks.sql")
+            ))
+            .unwrap();
+        connection
+            .execute("INSERT INTO tasks VALUES('z','数学'),('a','物理')", [])
+            .unwrap();
+        let mut e = Engine::default();
+        e.state.selected_task_id = Some("z".into());
+        connection
+            .execute(
+                "INSERT INTO checkpoint VALUES(1,?1)",
+                [serde_json::to_string(&e.state).unwrap()],
+            )
+            .unwrap();
+        let repo = SqliteRepository::from_connection(connection).unwrap();
+        let loaded = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(
+            loaded
+                .tasks
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["z", "a"]
+        );
+        assert!(loaded.tasks.iter().all(|t| !t.archived));
+        assert_eq!(loaded.selected_task_id.as_deref(), Some("z"));
+        assert_eq!(
+            repo.connection
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+                .unwrap(),
+            3
+        );
+    }
+    #[test]
+    fn catalog_deletion_archive_order_and_checkpoint_roll_back_together() {
+        let mut repo =
+            SqliteRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut e = Engine::default();
+        e.add_task("a".into(), "数学", false).unwrap();
+        e.add_task("b".into(), "物理", false).unwrap();
+        e.archive_task("b", true).unwrap();
+        e.reorder_tasks(&["b".into(), "a".into()]).unwrap();
+        repo.persist(&e.state, &[]).unwrap();
+        let before = serde_json::to_value(repo.load_checkpoint().unwrap().unwrap()).unwrap();
+        repo.connection.execute_batch("CREATE TRIGGER fail_catalog_save BEFORE UPDATE ON checkpoint BEGIN SELECT RAISE(ABORT,'test disk failure'); END;").unwrap();
+        e.delete_task("a", false).unwrap();
+        e.archive_task("b", false).unwrap();
+        assert!(repo.persist(&e.state, &[]).is_err());
+        assert_eq!(
+            serde_json::to_value(repo.load_checkpoint().unwrap().unwrap()).unwrap(),
+            before
+        );
+        repo.connection
+            .execute_batch("DROP TRIGGER fail_catalog_save;")
+            .unwrap();
+        repo.persist(&e.state, &[]).unwrap();
+        let loaded = repo.load_checkpoint().unwrap().unwrap();
+        assert_eq!(loaded.tasks.len(), 1);
+        assert_eq!(loaded.tasks[0].id, "b");
+        assert!(!loaded.tasks[0].archived);
     }
 }

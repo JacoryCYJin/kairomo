@@ -4,10 +4,15 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-v
 import { copy, locale } from '../../shared/i18n';
 import { dateInput, monthGrid, parseDateInput } from './history';
 const props = defineProps<{ from: string; to: string; today: string }>();
-const emit = defineEmits<{ 'update:from': [string]; 'update:to': [string] }>();
+const emit = defineEmits<{
+  'update:from': [string];
+  'update:to': [string];
+}>();
 type Field = 'from' | 'to';
 const active = ref<Field | null>(null);
 const root = ref<HTMLDivElement | null>(null);
+const compactLabels = ref(true);
+let widthObserver: ResizeObserver | undefined;
 const fromButton = ref<HTMLButtonElement | null>(null);
 const toButton = ref<HTMLButtonElement | null>(null);
 const month = ref(new Date());
@@ -26,7 +31,6 @@ const weekdays = computed(() =>
   })),
 );
 const minimum = computed(() => (active.value === 'to' ? props.from : ''));
-const selected = computed(() => (active.value === 'from' ? props.from : props.to));
 function label(value: string) {
   const date = parseDateInput(value);
   return (
@@ -117,44 +121,58 @@ function focusOut(event: FocusEvent) {
   )
     close(false);
 }
-onMounted(() => document.addEventListener('pointerdown', outside));
-onUnmounted(() => document.removeEventListener('pointerdown', outside));
+onMounted(() => {
+  document.addEventListener('pointerdown', outside);
+  if (root.value) {
+    widthObserver = new ResizeObserver(([entry]) => {
+      if (entry) compactLabels.value = entry.contentRect.width < 281;
+    });
+    widthObserver.observe(root.value);
+  }
+});
+onUnmounted(() => {
+  widthObserver?.disconnect();
+  document.removeEventListener('pointerdown', outside);
+});
 </script>
 <template>
   <div ref="root" class="relative min-w-0" @focusout="focusOut" @keydown.esc.stop.prevent="close()">
-    <div class="grid min-w-0 grid-cols-2 gap-2">
-      <div class="min-w-0">
-        <label id="range-from-label" class="text-xs text-muted">{{ copy.rangeStart }}</label>
-        <button
-          ref="fromButton"
-          type="button"
-          class="mt-1 block h-8 w-full rounded-lg border border-line bg-surface-muted px-2 text-left text-xs tabular-nums hover:bg-hover"
-          aria-labelledby="range-from-label range-from-value"
-          aria-haspopup="dialog"
-          :aria-expanded="active === 'from'"
-          @click="open('from')"
-        >
-          <span id="range-from-value">{{ label(from) }}</span>
-        </button>
-      </div>
-      <div class="min-w-0">
-        <label id="range-to-label" class="text-xs text-muted">{{ copy.rangeEnd }}</label>
-        <button
-          ref="toButton"
-          type="button"
-          class="mt-1 block h-8 w-full rounded-lg border border-line bg-surface-muted px-2 text-left text-xs tabular-nums hover:bg-hover"
-          aria-labelledby="range-to-label range-to-value"
-          aria-haspopup="dialog"
-          :aria-expanded="active === 'to'"
-          @click="open('to')"
-        >
-          <span id="range-to-value">{{ label(to) }}</span>
-        </button>
-      </div>
+    <div
+      class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_4px_auto_minmax(0,1fr)] items-center gap-x-1"
+      data-history-date-fields
+    >
+      <label id="range-from-label" class="whitespace-nowrap text-xs text-muted">{{
+        compactLabels ? copy.rangeStartShort : copy.rangeStart
+      }}</label>
+      <button
+        ref="fromButton"
+        type="button"
+        class="flex h-8 min-w-0 items-center justify-center rounded-lg border border-line bg-surface-muted px-1 text-center text-xs tabular-nums hover:bg-hover"
+        aria-labelledby="range-from-label range-from-value"
+        aria-haspopup="dialog"
+        :aria-expanded="active === 'from'"
+        @click="open('from')"
+      >
+        <span id="range-from-value" class="whitespace-nowrap">{{ label(from) }}</span>
+      </button>
+      <label id="range-to-label" class="col-start-4 whitespace-nowrap text-xs text-muted">{{
+        compactLabels ? copy.rangeEndShort : copy.rangeEnd
+      }}</label>
+      <button
+        ref="toButton"
+        type="button"
+        class="col-start-5 flex h-8 min-w-0 items-center justify-center rounded-lg border border-line bg-surface-muted px-1 text-center text-xs tabular-nums hover:bg-hover"
+        aria-labelledby="range-to-label range-to-value"
+        aria-haspopup="dialog"
+        :aria-expanded="active === 'to'"
+        @click="open('to')"
+      >
+        <span id="range-to-value" class="whitespace-nowrap">{{ label(to) }}</span>
+      </button>
     </div>
     <div
       v-if="active"
-      class="absolute inset-x-0 top-full z-20 mt-2 rounded-xl border border-line bg-surface p-2 shadow-dialog"
+      class="absolute inset-x-0 top-full z-20 mt-2 min-w-0 rounded-xl border border-line bg-surface p-2 shadow-sm"
       role="dialog"
       :aria-label="active === 'from' ? copy.rangeStart : copy.rangeEnd"
     >
@@ -220,18 +238,20 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside));
             role="gridcell"
             class="flex h-7 min-w-0 items-center justify-center rounded-md text-xs tabular-nums enabled:hover:bg-hover disabled:opacity-25"
             :class="
-              dateInput(day) === selected
+              dateInput(day) === from || dateInput(day) === to
                 ? 'bg-selected font-semibold text-ink'
-                : day.getMonth() === month.getMonth()
-                  ? 'text-ink'
-                  : 'text-faint'
+                : dateInput(day) > from && dateInput(day) < to
+                  ? 'bg-surface-muted text-ink'
+                  : day.getMonth() === month.getMonth()
+                    ? 'text-ink'
+                    : 'text-faint'
             "
             :data-date="dateInput(day)"
             :tabindex="dateInput(day) === focused ? 0 : -1"
             :aria-label="
               day.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' })
             "
-            :aria-selected="dateInput(day) === selected"
+            :aria-selected="dateInput(day) >= from && dateInput(day) <= to"
             :aria-current="dateInput(day) === today ? 'date' : undefined"
             :disabled="disabled(day)"
             @click="choose(day)"
