@@ -65,7 +65,7 @@ function show() {
   const rect = trigger.value?.getBoundingClientRect();
   if (!rect) return;
   portal.value = trigger.value?.closest<HTMLDialogElement>('dialog[open]') ?? 'body';
-  const height = Math.min(224, props.options.length * 32 + 8);
+  const height = Math.min(224, props.options.length * 32 + 10);
   const below = window.innerHeight - rect.bottom - 14;
   const above = rect.top - 14;
   const up = below < height && above > below;
@@ -236,10 +236,7 @@ onUnmounted(() => {
         role="option"
         :aria-selected="option.value === modelValue"
         class="flex h-8 cursor-pointer items-center gap-2 whitespace-nowrap rounded px-2"
-        :class="[
-          index === active ? 'bg-hover' : '',
-          option.divider ? 'mt-1 border-t border-line' : '',
-        ]"
+        :class="[index === active ? 'bg-hover' : '', option.divider ? 'border-t border-line' : '']"
         @pointermove="active = index"
         @click="choose(index)"
       >
