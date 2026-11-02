@@ -3,10 +3,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Plus, X } from 'lucide-vue-next';
 import { copy } from '../i18n';
 import type { Task } from '../ipc/types';
+import SettingsSelect from './SettingsSelect.vue';
 const props = defineProps<{
   tasks: Task[];
   selected: string | null;
   busy: boolean;
+  mode?: 'wheel' | 'select';
   selectTask: (id: string | null) => Promise<boolean>;
   createTask: (name: string) => Promise<string | null>;
 }>();
@@ -17,6 +19,11 @@ const name = ref(''),
 const options = computed(() => [
   { value: '', label: copy.value.uncategorized },
   ...props.tasks.filter((t) => !t.archived).map((t) => ({ value: t.id, label: t.name })),
+]);
+const CREATE_TASK = '__create_task__';
+const selectOptions = computed(() => [
+  ...options.value,
+  { value: CREATE_TASK, label: copy.value.newTask, divider: true },
 ]);
 const ticks = computed(() => {
   const slots = options.value.length - 1;
@@ -259,10 +266,21 @@ function keyboard(event: KeyboardEvent, index: number) {
 function emphasis(index: number) {
   return { opacity: 0.4 + 0.6 * Math.max(0, 1 - Math.abs(position.value - index)) };
 }
+function pickTask(value: string) {
+  if (value === CREATE_TASK) {
+    void create();
+    return;
+  }
+  const id = value || null;
+  if (blocked.value || id === props.selected) return;
+  void props.selectTask(id);
+}
 async function create() {
   if (props.busy) return;
-  beginMotion();
-  align(selectedIndex.value, false);
+  if (props.mode !== 'select') {
+    beginMotion();
+    align(selectedIndex.value, false);
+  }
   name.value = '';
   error.value = '';
   creating.value = true;
@@ -323,7 +341,18 @@ async function save() {
     :data-task-interacting="interacting"
     @mousedown.stop
   >
-    <div class="relative min-w-0 flex-1">
+    <div v-if="mode === 'select'" class="flex min-w-0 flex-1 justify-center">
+      <SettingsSelect
+        id="timer-task"
+        variant="header"
+        :model-value="selected ?? ''"
+        :label="copy.currentTask"
+        :options="selectOptions"
+        :disabled="blocked"
+        @update:model-value="pickTask"
+      />
+    </div>
+    <div v-else class="relative min-w-0 flex-1">
       <div
         ref="track"
         role="radiogroup"
@@ -376,7 +405,9 @@ async function save() {
         class="pointer-events-none absolute left-1/2 top-5 h-[7px] w-px -translate-x-1/2 bg-ink"
       ></span>
     </div>
+    <span v-if="mode === 'select'" class="w-[18px] shrink-0" aria-hidden="true" />
     <button
+      v-else
       ref="createButton"
       type="button"
       class="flex h-6 w-[18px] shrink-0 items-center justify-center rounded text-muted enabled:hover:bg-hover enabled:hover:text-ink"

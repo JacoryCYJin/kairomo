@@ -19,6 +19,7 @@ import {
 import type { Session } from '../../shared/ipc/types';
 const props = defineProps<{
   groups: { date: string; label: string; records: Session[] }[];
+  hasMore: boolean;
   nameOf: (record: Session) => string;
   colorOf: (record: Session) => string | null;
   timeOf: (record: Session) => string;
@@ -26,13 +27,35 @@ const props = defineProps<{
   span: number;
   seriesId: SeriesId;
 }>();
-const emit = defineEmits<{ select: [Session]; 'update:span': [number] }>();
+const emit = defineEmits<{
+  select: [Session];
+  'update:span': [number];
+  more: [];
+}>();
 const DAY_MS = 86400000;
 const viewport = ref<HTMLDivElement | null>(null);
 const viewportWidth = ref(0);
 const scrollLeft = ref(0);
+const loadTrigger = ref<HTMLDivElement | null>(null);
 let frame = 0;
 let observer: ResizeObserver | undefined;
+let moreObserver: IntersectionObserver | undefined;
+watch(
+  [loadTrigger, () => props.hasMore, () => props.groups.length],
+  ([trigger]) => {
+    moreObserver?.disconnect();
+    if (!trigger) return;
+    const root = trigger.closest<HTMLElement>('[data-history-timeline-scroll]');
+    moreObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) emit('more');
+      },
+      { root, rootMargin: '300px 0px' },
+    );
+    moreObserver.observe(trigger);
+  },
+  { flush: 'post' },
+);
 const scale = computed(() => timelineScale(props.span));
 const reference = computed(() => {
   const date = props.groups[0]?.date;
@@ -211,6 +234,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   observer?.disconnect();
+  moreObserver?.disconnect();
   if (frame) cancelAnimationFrame(frame);
 });
 </script>
@@ -247,7 +271,7 @@ onUnmounted(() => {
       <div class="min-w-full" :style="{ width: `${scale * 100}%` }">
         <section v-for="group in groups" :key="group.date">
           <h2
-            class="sticky left-0 z-10 mb-2 mt-5 w-fit bg-paper pr-2 text-xs font-medium text-muted"
+            class="sticky left-0 z-10 mb-2 mt-5 w-fit bg-[var(--history-sheet-background)] pr-2 text-xs font-medium text-muted"
           >
             {{ group.label }}
           </h2>
@@ -283,6 +307,7 @@ onUnmounted(() => {
             </button>
           </div>
         </section>
+        <div v-if="hasMore" ref="loadTrigger" class="h-px w-full" aria-hidden="true" />
       </div>
     </div>
   </div>

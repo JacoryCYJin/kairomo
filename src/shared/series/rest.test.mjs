@@ -5,6 +5,7 @@ import { coffeeSeries } from './coffee/definition.ts';
 import { availableSeries } from './catalog.ts';
 import {
   dialogConfirmStyle,
+  dotColor,
   remainingRestFraction,
   restThemeStyle,
   visualThemeStyle,
@@ -38,6 +39,18 @@ test('every kit provides readable dialog confirmations in light and dark appeara
         .map(luminance)
         .sort((a, b) => b - a);
       assert.ok((a + 0.05) / (b + 0.05) >= 4.5, `${series.id}, dark=${dark}`);
+    }
+  }
+});
+
+test('calendar heat colors darken with intensity along the slider palette', () => {
+  for (const series of availableSeries) {
+    for (const dark of [false, true]) {
+      const values = [0, 0.25, 0.5, 0.75, 1].map((intensity) =>
+        luminance(dotColor(series.id, dark, intensity)),
+      );
+      for (let index = 1; index < values.length; index++)
+        assert.ok(values[index] <= values[index - 1] + 1e-12, `${series.id}, dark=${dark}`);
     }
   }
 });

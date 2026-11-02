@@ -36,6 +36,7 @@ const emit = defineEmits<{
         | 'focus_mode'
         | 'retain_task'
         | 'task_colors'
+        | 'task_picker'
       >
     >,
   ];
@@ -226,6 +227,7 @@ function choosePreference(key: keyof Preferences, value: string) {
         @page="navigate"
         @retain="emit('save', { retain_task: $event })"
         @colors="emit('save', { task_colors: $event })"
+        @picker="emit('save', { task_picker: $event })"
       />
       <section v-show="!taskPage" class="mt-4" :aria-label="copy.pageSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.pageSettings }}</h2>

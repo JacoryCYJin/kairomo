@@ -26,7 +26,7 @@ const signature = (await readFile(`${source}.sig`, 'utf8')).trim();
 const manifest = {
   version,
   notes:
-    'Beta.7：新增记录时间轴与详情浏览；新增分类配色、自定义色板与取色器，分类删除时记录转为未分类，并改进分类拖拽、新建置顶与刻度尺。',
+    'Beta.8：优化记录页滚动与甘特图按天懒加载；日历圆点按当天专注时长渐变；新增分类切换方式（滚轮／下拉）并支持在下拉内新建分类。',
   pub_date: new Date().toISOString(),
   platforms: {
     [`darwin-${architecture}`]: {

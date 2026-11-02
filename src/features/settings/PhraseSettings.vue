@@ -109,12 +109,12 @@ onBeforeUnmount(flushEditor);
               v-model="draft.enabled"
               type="checkbox"
               role="switch"
-              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong checked:bg-dialog-confirm"
+              class="peer h-5 w-9 cursor-pointer appearance-none rounded-full bg-line-strong transition-colors checked:bg-dialog-confirm"
               @change="save"
             />
             <span
               aria-hidden="true"
-              class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface peer-checked:translate-x-4 peer-checked:bg-paper"
+              class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface transition-transform peer-checked:translate-x-4 peer-checked:bg-paper"
             ></span>
           </span>
         </label>

@@ -1,6 +1,6 @@
 # Beta 打包、安装与更新
 
-当前版本：0.1.0-beta.7。发布至 GitHub Beta prerelease，提供 Apple Silicon macOS 安装包与签名更新包。
+当前版本：0.1.0-beta.8。发布至 GitHub Beta prerelease，提供 Apple Silicon macOS 安装包与签名更新包。
 
 ## 身份与数据
 
@@ -25,7 +25,7 @@ bash scripts/dev.sh beta
 
 macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依赖；后续复用缓存。脚本不启动开发服务、不停止当前计时、不自动安装或发布。
 
-应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.7/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
+应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.8/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
 
 双击 DMG 后将 Kairomo Beta 拖入 Applications。安装后从 `/Applications/Kairomo Beta.app` 启动日常版本。开发构建位于 `target/debug/bundle/macos/Kairomo Dev.app`，开发启动继续使用 `bash scripts/dev.sh start`。
 
@@ -57,6 +57,8 @@ macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依�
 2026-10-30 按用户明确要求，对 Beta.6 做一次同版本更新通道修复重打包：同时替换版本 Release 的五个发布文件与固定通道清单，不移动原 `v0.1.0-beta.6` 标签；源码提交／合并另行授权。常规通道工具仍拒绝同版本不同清单，后续正常发布应递增 Beta 版本。
 
 2026-11-01：0.1.0-beta.7 新增记录时间轴与详情浏览；新增分类配色、自定义色板与取色器，分类删除改为关联记录转为未分类，并改进分类拖拽、新建置顶与刻度尺。保留 Beta 数据身份，发布至 GitHub Beta prerelease 并更新固定通道。
+
+2026-11-01：0.1.0-beta.8 优化记录页滚动与封面圆角更新，甘特图改为按天懒加载并完整展示所选范围；日历圆点按当天专注时长使用套件色渐变；新增分类切换方式（滚轮／下拉菜单），下拉内可直接新建分类，并统一开关动画。保留 Beta 数据身份。此版本先生成本地构建，未上传更新通道、未创建标签。
 
 ## 验证
 

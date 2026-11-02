@@ -6,11 +6,17 @@ const props = defineProps<{
   modelValue: string;
   label: string;
   describedby?: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; divider?: boolean }[];
   disabled?: boolean;
   compact?: boolean;
+  variant?: 'row' | 'header';
 }>();
 const emit = defineEmits<{ 'update:modelValue': [string] }>();
+const triggerClass = computed(() =>
+  props.variant === 'header'
+    ? 'inline-flex h-5 w-auto min-w-0 max-w-full items-center justify-center gap-1.5 rounded-md border-0 bg-transparent px-0 text-xs font-medium text-ink hover:bg-transparent focus-visible:bg-transparent disabled:cursor-not-allowed disabled:opacity-50'
+    : 'inline-flex h-8 min-w-24 shrink-0 items-center justify-end gap-2 rounded-md border-0 bg-transparent pl-2 pr-1 text-xs text-ink disabled:cursor-not-allowed disabled:opacity-50',
+);
 const trigger = ref<HTMLButtonElement>();
 const panel = ref<HTMLElement>();
 const portal = ref<string | HTMLElement>('body');
@@ -200,14 +206,15 @@ onUnmounted(() => {
     :aria-activedescendant="opened ? optionId(active) : undefined"
     aria-haspopup="listbox"
     :disabled="disabled"
-    class="inline-flex h-8 min-w-24 shrink-0 items-center justify-end gap-2 rounded-md border-0 bg-transparent pl-2 pr-1 text-xs text-ink disabled:cursor-not-allowed disabled:opacity-50"
+    :class="triggerClass"
     @pointerdown="rememberPointerState"
     @pointercancel="openedOnPointerDown = null"
     @click="toggle"
     @keydown="keydown"
     @blur="close()"
   >
-    <span class="truncate">{{ selectedLabel }}</span>
+    <span v-if="variant === 'header'" class="size-3 shrink-0" aria-hidden="true" />
+    <span class="min-w-0 truncate">{{ selectedLabel }}</span>
     <ChevronDown class="size-3 text-muted" aria-hidden="true" />
   </button>
   <Teleport :to="portal">
@@ -229,7 +236,10 @@ onUnmounted(() => {
         role="option"
         :aria-selected="option.value === modelValue"
         class="flex h-8 cursor-pointer items-center gap-2 whitespace-nowrap rounded px-2"
-        :class="index === active ? 'bg-hover' : ''"
+        :class="[
+          index === active ? 'bg-hover' : '',
+          option.divider ? 'mt-1 border-t border-line' : '',
+        ]"
         @pointermove="active = index"
         @click="choose(index)"
       >

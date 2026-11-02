@@ -264,6 +264,7 @@ onUnmounted(() => {
         <TaskPicker
           :tasks="state.tasks ?? []"
           :selected="state.selected_task_id ?? null"
+          :mode="state.settings.task_picker === 'select' ? 'select' : 'wheel'"
           :busy="busy || !ready"
           :create-task="k.createTask"
           :select-task="k.selectTask"
@@ -303,13 +304,18 @@ onUnmounted(() => {
     >
       <span class="truncate text-sm font-semibold">{{ title }}</span>
       <nav
-        class="flex shrink-0 gap-0.5 rounded-lg bg-surface-muted p-0.5"
+        class="relative grid shrink-0 grid-cols-2 rounded-lg bg-surface-muted p-0.5"
         :aria-label="copy.navigation"
       >
+        <span
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-4px)/2)] rounded-md bg-selected transition-transform duration-200 ease-out motion-reduce:transition-none"
+          :style="{ transform: `translateX(${view === 'history' ? 0 : 100}%)` }"
+        />
         <button
-          class="rounded-md px-3 py-1 text-xs"
+          class="relative z-10 rounded-md px-3 py-1 text-xs"
           :aria-pressed="view === 'history'"
-          :class="view === 'history' ? 'bg-selected text-ink' : 'text-muted'"
+          :class="view === 'history' ? 'text-ink' : 'text-muted'"
           @click="
             view = 'history';
             notice = '';
@@ -318,9 +324,9 @@ onUnmounted(() => {
           {{ copy.history }}
         </button>
         <button
-          class="rounded-md px-3 py-1 text-xs"
+          class="relative z-10 rounded-md px-3 py-1 text-xs"
           :aria-pressed="view === 'settings'"
-          :class="view === 'settings' ? 'bg-selected text-ink' : 'text-muted'"
+          :class="view === 'settings' ? 'text-ink' : 'text-muted'"
           @click="
             view = 'settings';
             notice = '';
@@ -371,6 +377,7 @@ onUnmounted(() => {
           :current="state.current"
           :checkpoint="state.checkpoint_at_ms"
           :series-id="state.settings.visual_series"
+          :dark="dark"
           @export="k.exportRecords"
           @remove="k.remove"
           :correct-record="k.correct"

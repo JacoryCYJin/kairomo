@@ -211,6 +211,7 @@ const caption = computed(() =>
         :current="null"
         :checkpoint="Date.now()"
         :series-id="settings.visual_series"
+        :dark="dark"
       />
       <SettingsView
         v-else

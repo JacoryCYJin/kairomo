@@ -48,6 +48,7 @@ const props = defineProps<{
   current: Session | null;
   checkpoint: number;
   seriesId: SeriesId;
+  dark: boolean;
 }>();
 const emit = defineEmits<{
   export: [];
@@ -183,15 +184,50 @@ const deleteHeading = ref<HTMLHeadingElement | null>(null);
 const loadTrigger = ref<HTMLDivElement | null>(null);
 const listScroller = ref<HTMLDivElement | null>(null);
 const historyRoot = ref<HTMLElement | null>(null);
+const historySheet = ref<HTMLElement | null>(null);
 const recordsVisible = ref(false);
 const recordsExpanded = ref(false);
-const coverRadius = ref(16);
-function updateCover() {
+let coverFrame = 0;
+let coverRadius = 16;
+const COVER_WHEEL_SCALE = 0.8;
+let wheelFrame = 0;
+let pendingWheel = 0;
+function coverWheel(event: WheelEvent) {
   const root = historyRoot.value;
-  if (!root) return;
-  recordsVisible.value = root.scrollTop > 0;
-  recordsExpanded.value = root.scrollTop >= root.clientHeight - 1;
-  coverRadius.value = Math.min(16, Math.max(0, (root.clientHeight - root.scrollTop) / 4));
+  if (!root || recordsExpanded.value || event.ctrlKey || event.deltaMode !== 0) return;
+  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  event.preventDefault();
+  pendingWheel += event.deltaY * COVER_WHEEL_SCALE;
+  if (wheelFrame) return;
+  wheelFrame = requestAnimationFrame(() => {
+    wheelFrame = 0;
+    const element = historyRoot.value;
+    if (!element) return;
+    const max = element.scrollHeight - element.clientHeight;
+    const next = Math.max(0, Math.min(max, element.scrollTop + pendingWheel));
+    pendingWheel = 0;
+    element.scrollTop = next;
+  });
+}
+function updateCover() {
+  if (coverFrame) return;
+  coverFrame = requestAnimationFrame(() => {
+    coverFrame = 0;
+    const root = historyRoot.value;
+    if (!root) return;
+    const visible = root.scrollTop > 0;
+    if (recordsVisible.value !== visible) recordsVisible.value = visible;
+    const expanded = root.scrollTop >= root.clientHeight - 1;
+    if (recordsExpanded.value !== expanded) recordsExpanded.value = expanded;
+    const radius = Math.round(Math.min(16, Math.max(0, (root.clientHeight - root.scrollTop) / 4)));
+    if (radius === coverRadius) return;
+    coverRadius = radius;
+    const sheet = historySheet.value;
+    if (sheet) {
+      sheet.style.borderTopLeftRadius = `${radius}px`;
+      sheet.style.borderTopRightRadius = `${radius}px`;
+    }
+  });
 }
 const calendarColumn = ref<HTMLDivElement | null>(null);
 const collectionHeight = ref<number>();
@@ -229,6 +265,8 @@ onUnmounted(() => {
   columnObserver?.disconnect();
   clearInterval(clockTick);
   loadObserver?.disconnect();
+  if (coverFrame) cancelAnimationFrame(coverFrame);
+  if (wheelFrame) cancelAnimationFrame(wheelFrame);
 });
 const anchorDate = computed(() => parseDateInput(anchor.value) ?? now.value);
 const period = computed(() =>
@@ -255,9 +293,9 @@ const total = computed(() =>
   totalInPeriod(sessions.value, 'focus', period.value, props.checkpoint),
 );
 const completedRecords = computed(() => earnedBeans(taskRecords.value, period.value));
-const groups = computed(() => {
+function groupByDate(records: Session[]) {
   const result: { date: string; label: string; records: Session[] }[] = [];
-  for (const session of filtered.value.slice(0, visibleCount.value)) {
+  for (const session of records) {
     const date = dateInput(new Date(recordStartInPeriod(session, period.value, props.checkpoint)));
     let group = result.find((g) => g.date === date);
     if (!group) {
@@ -267,9 +305,21 @@ const groups = computed(() => {
     group.records.push(session);
   }
   return result.sort((a, b) => b.date.localeCompare(a.date));
-});
+}
+const groups = computed(() => groupByDate(filtered.value.slice(0, visibleCount.value)));
+const TIMELINE_DAYS = 31;
+const timelineDays = ref(TIMELINE_DAYS);
+const allTimelineGroups = computed(() => groupByDate(filtered.value));
+const timelineGroups = computed(() => allTimelineGroups.value.slice(0, timelineDays.value));
+const timelineHasMore = computed(() => timelineDays.value < allTimelineGroups.value.length);
+function loadMoreTimeline() {
+  timelineDays.value = Math.min(allTimelineGroups.value.length, timelineDays.value + TIMELINE_DAYS);
+}
+const timelineScroller = ref<HTMLDivElement | null>(null);
 watch([range, anchor, from, to, selectedTasks], () => {
   visibleCount.value = 50;
+  timelineDays.value = TIMELINE_DAYS;
+  if (timelineScroller.value) timelineScroller.value.scrollTop = 0;
   detailOpen.value = false;
 });
 watch(detailOpen, async (open) => {
@@ -399,7 +449,8 @@ async function submit() {
     tabindex="0"
     :aria-label="copy.historyTitle"
     data-history-viewport
-    @scroll="updateCover"
+    @scroll.passive="updateCover"
+    @wheel="coverWheel"
   >
     <div class="relative h-[200%]" data-history-track>
       <div
@@ -437,6 +488,8 @@ async function submit() {
               :records="sessions"
               :checkpoint="checkpoint"
               :all="range === 'all'"
+              :series-id="seriesId"
+              :dark="dark"
               @browse="month = $event"
               @select="selectDate"
               @today="selectDate(dateInput(new Date()))"
@@ -467,11 +520,9 @@ async function submit() {
         </div>
       </div>
       <div
+        ref="historySheet"
         class="history-sheet absolute inset-x-0 top-1/2 z-10 flex h-1/2 flex-col py-5"
-        :style="{
-          borderTopLeftRadius: `${coverRadius}px`,
-          borderTopRightRadius: `${coverRadius}px`,
-        }"
+        style="border-top-left-radius: 16px; border-top-right-radius: 16px"
         :class="{ 'shadow-none': !recordsVisible }"
         :inert="!recordsVisible"
         data-history-cover
@@ -568,18 +619,22 @@ async function submit() {
           </div>
           <div
             v-if="historyView === 'timeline'"
+            ref="timelineScroller"
+            data-history-timeline-scroll
             class="record-list-scroll min-h-0 flex-1"
             :class="recordsExpanded ? 'overflow-y-auto' : 'overflow-y-hidden'"
           >
             <HistoryTimeline
               v-model:span="timelineSpan"
-              :groups="groups"
+              :groups="timelineGroups"
+              :has-more="timelineHasMore"
               :name-of="recordName"
               :color-of="recordColor"
               :time-of="recordTime"
               :checkpoint="checkpoint"
               :series-id="seriesId"
               @select="fromTimeline"
+              @more="loadMoreTimeline"
             />
           </div>
           <div v-else class="relative min-h-0 flex-1 overflow-hidden" data-history-records>

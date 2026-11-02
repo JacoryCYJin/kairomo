@@ -38,6 +38,14 @@ pub enum BeanRange {
     Week,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPickerStyle {
+    #[default]
+    Wheel,
+    Select,
+}
+
 fn default_retain_task() -> bool {
     true
 }
@@ -65,6 +73,8 @@ pub struct Settings {
     pub visual_series: String,
     #[serde(default)]
     pub task_colors: Vec<String>,
+    #[serde(default)]
+    pub task_picker: TaskPickerStyle,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -81,6 +91,7 @@ impl Default for Settings {
             appearance: Appearance::System,
             visual_series: default_visual_series(),
             task_colors: Vec::new(),
+            task_picker: TaskPickerStyle::Wheel,
         }
     }
 }
@@ -256,6 +267,24 @@ mod task_color_settings_tests {
             settings.validate(),
             Err(TimerError::InvalidTaskColor)
         ));
+    }
+    #[test]
+    fn task_picker_style_defaults_to_wheel_and_round_trips() {
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("task_picker");
+        let legacy: Settings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.task_picker, TaskPickerStyle::Wheel);
+        let settings = Settings {
+            task_picker: TaskPickerStyle::Select,
+            ..Settings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Settings>(&encoded)
+                .unwrap()
+                .task_picker,
+            TaskPickerStyle::Select
+        );
     }
 }
 

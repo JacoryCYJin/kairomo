@@ -115,6 +115,7 @@ export function useKairomo() {
         | 'focus_mode'
         | 'retain_task'
         | 'task_colors'
+        | 'task_picker'
       >
     >,
   ) {
