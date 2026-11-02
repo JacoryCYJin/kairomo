@@ -32,6 +32,7 @@ export interface ThemeOptionsChange {
 export interface Settings {
   theme_options?: Partial<Record<SeriesId, Record<string, ThemeOptionValue>>>;
   task_colors?: string[];
+  task_picker?: 'wheel' | 'select';
   bean_range: BeanRange;
   phrases: Phrases;
   focus_minutes: number;

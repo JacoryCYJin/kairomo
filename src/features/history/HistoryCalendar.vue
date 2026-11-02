@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
 import { copy, locale, duration, formatBeanCount } from '../../shared/i18n';
 import { dateInput, monthGrid, periodFor, totalInPeriod } from './history';
 import { isCompletedFocus } from '../../shared/completions';
+import { dotColor } from '../../shared/series/rest';
+import type { SeriesId } from '../../shared/series/types';
 import type { Period } from './history';
 import type { Session } from '../../shared/ipc/types';
 const props = defineProps<{
@@ -14,6 +16,8 @@ const props = defineProps<{
   records: Session[];
   checkpoint: number;
   all: boolean;
+  seriesId: SeriesId;
+  dark: boolean;
 }>();
 const emit = defineEmits<{ browse: [Date]; select: [string]; today: [] }>();
 const days = computed(() => monthGrid(props.month));
@@ -34,6 +38,23 @@ const counts = computed(() => {
     }
   return map;
 });
+const dayDurations = computed(() => {
+  const map = new Map<string, number>();
+  for (const day of days.value) {
+    const key = dateInput(day);
+    const ms = totalInPeriod(props.records, 'focus', periodFor('day', day), props.checkpoint);
+    if (ms > 0) map.set(key, ms);
+  }
+  return map;
+});
+const intensityBase = computed(() => Math.max(4 * 3600_000, ...dayDurations.value.values()));
+function dotStyle(key: string) {
+  if (!counts.value.get(key)) return undefined;
+  const ms = dayDurations.value.get(key) ?? 0;
+  return {
+    backgroundColor: dotColor(props.seriesId, props.dark, ms / intensityBase.value),
+  };
+}
 function browse(delta: number) {
   emit('browse', new Date(props.month.getFullYear(), props.month.getMonth() + delta, 1));
 }
@@ -94,7 +115,8 @@ function description(day: Date) {
         >
         <span
           class="mt-0.5 h-1 w-1 rounded-full"
-          :class="counts.get(dateInput(day)) ? 'bg-muted' : 'bg-transparent'"
+          :class="counts.get(dateInput(day)) ? '' : 'bg-transparent'"
+          :style="dotStyle(dateInput(day))"
           aria-hidden="true"
         ></span>
       </button>

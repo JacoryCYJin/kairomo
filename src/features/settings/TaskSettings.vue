@@ -16,6 +16,7 @@ import { copy } from '../../shared/i18n';
 import { taskColors } from '../../shared/taskColor';
 import ColorPicker from './ColorPicker.vue';
 import SettingsSubpage from './SettingsSubpage.vue';
+import SettingsSelect from '../../shared/ui/SettingsSelect.vue';
 import type { Session, Settings, Task, TaskChange } from '../../shared/ipc/types';
 const props = defineProps<{
   tasks: Task[];
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   page: ['settings' | 'task-manager'];
   retain: [boolean];
   colors: [string[]];
+  picker: ['wheel' | 'select'];
 }>();
 const opened = ref(false),
   error = ref(''),
@@ -201,6 +203,22 @@ function drop(id: string) {
               class="pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface transition-transform peer-checked:translate-x-4 peer-checked:bg-paper"
             ></span
           ></span>
+        </div>
+        <div
+          class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
+        >
+          <span class="text-xs">{{ copy.taskPicker }}</span>
+          <SettingsSelect
+            id="task-picker"
+            :model-value="settings.task_picker ?? 'wheel'"
+            :label="copy.taskPicker"
+            :options="[
+              { value: 'wheel', label: copy.taskPickerWheel },
+              { value: 'select', label: copy.taskPickerSelect },
+            ]"
+            :disabled="busy"
+            @update:model-value="emit('picker', $event as 'wheel' | 'select')"
+          />
         </div>
         <div
           class="mx-3.5 flex min-h-12 items-center justify-between gap-4 border-t border-line py-2"
