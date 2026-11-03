@@ -24,7 +24,7 @@ const startupReleased = ref(!desktop || auxiliary);
 const visualPrepared = ref(false);
 const visualFailed = ref(false);
 const k = useKairomo();
-const { state, records, ready, busy, error, notice } = k;
+const { state, records, shortcuts, ready, busy, error, notice } = k;
 const popupHeight = computed(() => timerLayout(state.value).height);
 let pendingResize = Promise.resolve();
 function syncPopupSize() {
@@ -385,6 +385,14 @@ onUnmounted(() => {
         <SettingsView
           v-else
           :settings="state.settings"
+          :shortcuts="shortcuts"
+          :retry-shortcuts="k.retryShortcuts"
+          :begin-shortcut-recording="k.beginShortcutRecording"
+          :end-shortcut-recording="k.endShortcutRecording"
+          :update-shortcut="k.updateShortcut"
+          :set-shortcut-enabled="k.setShortcutEnabled"
+          :restore-shortcut="k.restoreShortcut"
+          :restore-all-shortcuts="k.restoreAllShortcuts"
           :clear-records="k.clearRecords"
           :tasks="state.tasks ?? []"
           :records="records"

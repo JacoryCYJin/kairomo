@@ -1,8 +1,10 @@
-export type SettingsPage = 'settings' | 'phrase-library' | 'phrase-editor' | 'task-manager';
+export type SettingsPage =
+  'settings' | 'phrase-library' | 'phrase-editor' | 'task-manager' | 'shortcut-manager';
 const parent: Partial<Record<SettingsPage, SettingsPage>> = {
   'phrase-library': 'settings',
   'phrase-editor': 'phrase-library',
   'task-manager': 'settings',
+  'shortcut-manager': 'settings',
 };
 /** Remember each parent independently; opening a child always starts at its top. */
 export function settingsNavigation() {

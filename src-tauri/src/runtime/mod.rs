@@ -33,6 +33,11 @@ impl Runtime {
         engine
             .state
             .settings
+            .shortcut_bindings
+            .migrate_legacy_toggle_default();
+        engine
+            .state
+            .settings
             .validate()
             .map_err(|e| e.to_string())?;
         if engine
@@ -239,6 +244,14 @@ impl Runtime {
     pub fn phrases(&mut self, phrases: timer_core::Phrases) -> Result<Snapshot, String> {
         let mut settings = self.engine.state.settings.clone();
         settings.phrases = phrases;
+        self.configure(settings)
+    }
+    pub fn shortcut_bindings(
+        &mut self,
+        bindings: timer_core::ShortcutBindings,
+    ) -> Result<Snapshot, String> {
+        let mut settings = self.engine.state.settings.clone();
+        settings.shortcut_bindings = bindings;
         self.configure(settings)
     }
     pub fn theme_options(

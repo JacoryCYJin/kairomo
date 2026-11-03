@@ -25,6 +25,13 @@ const settings = ref<Settings>({
   notifications: false,
   focus_mode: 'manual',
   appearance: 'light',
+  global_shortcuts: false,
+  shortcut_bindings: {
+    toggle: { modifiers: ['control', 'alt'], key: 'KeyK' },
+    pause: { modifiers: ['control', 'alt'], key: 'Enter' },
+    toggle_enabled: true,
+    pause_enabled: true,
+  },
   visual_series:
     availableSeries.find((kit) => kit.id === query.get('series'))?.id ?? defaultSeriesId,
 });
@@ -216,6 +223,14 @@ const caption = computed(() =>
       <SettingsView
         v-else
         :settings="settings"
+        :shortcuts="null"
+        :retry-shortcuts="async () => null"
+        :begin-shortcut-recording="async () => null"
+        :end-shortcut-recording="async () => null"
+        :update-shortcut="async () => null"
+        :set-shortcut-enabled="async () => null"
+        :restore-shortcut="async () => null"
+        :restore-all-shortcuts="async () => null"
         :busy="false"
         :clear-records="
           async () => {

@@ -5,10 +5,15 @@ import type {
   Preferences,
   Session,
   Settings,
+  ShortcutBinding,
+  ShortcutKind,
+  ShortcutMutation,
+  ShortcutStatus,
   Snapshot,
   ThemeOptionsChange,
   TaskChange,
 } from '../shared/ipc/types';
+import { defaultShortcutBindings } from '../shared/shortcutKeys';
 import { defaultSeriesId } from '../shared/series/catalog';
 import { emptyPhrases } from '../shared/ipc/types';
 import { copy, locale } from '../shared/i18n';
@@ -29,6 +34,8 @@ const defaults: Snapshot = {
     focus_mode: 'manual',
     appearance: 'system',
     visual_series: defaultSeriesId,
+    global_shortcuts: false,
+    shortcut_bindings: defaultShortcutBindings,
   },
   needs_recovery: false,
   pause_reason: null,
@@ -38,6 +45,7 @@ const defaults: Snapshot = {
 export function useKairomo() {
   const state = ref<Snapshot>(defaults);
   const records = ref<Session[]>([]);
+  const shortcuts = ref<ShortcutStatus | null>(null);
   const ready = ref(false),
     busy = ref(false),
     error = ref(''),
@@ -69,6 +77,7 @@ export function useKairomo() {
       apply(await api.snapshot());
       await refresh();
       ready.value = true;
+      shortcuts.value = await api.shortcutStatus().catch(() => null);
     } catch {
       ready.value = false;
       error.value = copy.value.error;
@@ -116,6 +125,7 @@ export function useKairomo() {
         | 'retain_task'
         | 'task_colors'
         | 'task_picker'
+        | 'global_shortcuts'
       >
     >,
   ) {
@@ -213,6 +223,65 @@ export function useKairomo() {
       busy.value = false;
     }
   }
+  function shortcutError(code: string | null): string | null {
+    switch (code) {
+      case 'shortcut_duplicate':
+        return copy.value.shortcutDuplicate;
+      case 'shortcut_invalid':
+        return copy.value.shortcutInvalid;
+      case 'shortcut_register_failed':
+        return copy.value.shortcutRegisterFailed;
+      case 'shortcut_save_failed':
+        return copy.value.shortcutSaveFailed;
+      case 'shortcut_unregister_failed':
+        return copy.value.shortcutUnregisterFailed;
+      case 'shortcut_rollback_failed':
+        return copy.value.shortcutRollbackFailed;
+      case 'shortcut_recording_unavailable':
+        return copy.value.shortcutRecordingUnavailable;
+      case 'invalid_shortcut':
+        return copy.value.shortcutInvalid;
+      default:
+        return code ? copy.value.error : null;
+    }
+  }
+  async function shortcutMutation(operation: () => Promise<ShortcutMutation>) {
+    if (!ready.value || busy.value) return null;
+    busy.value = true;
+    error.value = '';
+    try {
+      const mutation = await operation();
+      apply(mutation.snapshot);
+      shortcuts.value = mutation.status;
+      return shortcutError(mutation.error);
+    } catch {
+      error.value = copy.value.error;
+      return copy.value.error;
+    } finally {
+      busy.value = false;
+    }
+  }
+  function retryShortcuts() {
+    return shortcutMutation(() => api.retryShortcuts());
+  }
+  function beginShortcutRecording() {
+    return shortcutMutation(() => api.beginShortcutRecording());
+  }
+  function endShortcutRecording() {
+    return shortcutMutation(() => api.endShortcutRecording());
+  }
+  function updateShortcut(kind: ShortcutKind, binding: ShortcutBinding) {
+    return shortcutMutation(() => api.updateShortcut(kind, binding));
+  }
+  function setShortcutEnabled(kind: ShortcutKind, enabled: boolean) {
+    return shortcutMutation(() => api.setShortcutEnabled(kind, enabled));
+  }
+  function restoreShortcut(kind: ShortcutKind) {
+    return shortcutMutation(() => api.restoreShortcut(kind));
+  }
+  function restoreAllShortcuts() {
+    return shortcutMutation(() => api.restoreAllShortcuts());
+  }
   async function createTask(name: string): Promise<string | null> {
     if (!ready.value || busy.value) return copy.value.taskSaveFailed;
     busy.value = true;
@@ -252,6 +321,9 @@ export function useKairomo() {
         }),
         api.onNotificationError(() => {
           notice.value = copy.value.notificationError;
+        }),
+        api.onShortcutsChanged((status) => {
+          shortcuts.value = status;
         }),
       ]);
       if (disposed) {
@@ -303,11 +375,19 @@ export function useKairomo() {
   return {
     state,
     records,
+    shortcuts,
     ready,
     busy,
     error,
     notice,
     connect,
+    retryShortcuts,
+    beginShortcutRecording,
+    endShortcutRecording,
+    updateShortcut,
+    setShortcutEnabled,
+    restoreShortcut,
+    restoreAllShortcuts,
     createTask,
     manageTasks,
     selectTask,

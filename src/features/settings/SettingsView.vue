@@ -5,6 +5,9 @@ import { copy } from '../../shared/i18n';
 import type {
   Preferences,
   Settings,
+  ShortcutBinding,
+  ShortcutKind,
+  ShortcutStatus,
   ThemeOptionsChange,
   Task,
   Session,
@@ -15,6 +18,7 @@ import UpdateSettings from './UpdateSettings.vue';
 import PhraseSettings from './PhraseSettings.vue';
 import ThemeSettings from './ThemeSettings.vue';
 import RecordSettings from './RecordSettings.vue';
+import ShortcutSettings from './ShortcutSettings.vue';
 import { settingsNavigation, type SettingsPage } from './settingsNavigation';
 const props = defineProps<{
   settings: Settings;
@@ -22,6 +26,14 @@ const props = defineProps<{
   records?: Session[];
   current?: Session | null;
   manageTasks?: (change: TaskChange) => Promise<string | null>;
+  shortcuts?: ShortcutStatus | null;
+  retryShortcuts: () => Promise<string | null>;
+  beginShortcutRecording: () => Promise<string | null>;
+  endShortcutRecording: () => Promise<string | null>;
+  updateShortcut: (kind: ShortcutKind, binding: ShortcutBinding) => Promise<string | null>;
+  setShortcutEnabled: (kind: ShortcutKind, enabled: boolean) => Promise<string | null>;
+  restoreShortcut: (kind: ShortcutKind) => Promise<string | null>;
+  restoreAllShortcuts: () => Promise<string | null>;
   busy: boolean;
   clearRecords: () => Promise<boolean>;
 }>();
@@ -37,6 +49,7 @@ const emit = defineEmits<{
         | 'retain_task'
         | 'task_colors'
         | 'task_picker'
+        | 'global_shortcuts'
       >
     >,
   ];
@@ -50,6 +63,7 @@ const libraryOpen = computed(
   () => currentPage.value === 'phrase-library' || currentPage.value === 'phrase-editor',
 );
 const taskPage = computed(() => currentPage.value === 'task-manager');
+const shortcutPage = computed(() => currentPage.value === 'shortcut-manager');
 async function unavailable() {
   return copy.value.taskSaveFailed;
 }
@@ -113,7 +127,7 @@ function choosePreference(key: keyof Preferences, value: string) {
 <template>
   <section ref="root" class="mx-auto max-w-[580px] pb-2 pt-4">
     <form v-show="!libraryOpen" @submit.prevent="saveDurations">
-      <section v-show="!taskPage" :aria-label="copy.timerSettings">
+      <section v-show="!taskPage && !shortcutPage" :aria-label="copy.timerSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.timerSettings }}</h2>
         <div class="grid auto-rows-fr rounded-xl border border-line bg-surface">
           <label class="flex min-h-[52px] items-center justify-between gap-4 px-3.5 py-1.5">
@@ -218,6 +232,7 @@ function choosePreference(key: keyof Preferences, value: string) {
         </div>
       </section>
       <TaskSettings
+        v-show="!shortcutPage"
         :tasks="tasks ?? []"
         :records="records ?? []"
         :current="current ?? null"
@@ -229,7 +244,7 @@ function choosePreference(key: keyof Preferences, value: string) {
         @colors="emit('save', { task_colors: $event })"
         @picker="emit('save', { task_picker: $event })"
       />
-      <section v-show="!taskPage" class="mt-4" :aria-label="copy.pageSettings">
+      <section v-show="!taskPage && !shortcutPage" class="mt-4" :aria-label="copy.pageSettings">
         <h2 class="mb-2.5 text-sm font-medium">{{ copy.pageSettings }}</h2>
         <div class="rounded-xl border border-line bg-surface">
           <div class="flex min-h-12 items-center justify-between gap-4 px-3.5 py-2">
@@ -267,8 +282,23 @@ function choosePreference(key: keyof Preferences, value: string) {
           </div>
         </div>
       </section>
+      <ShortcutSettings
+        v-if="!libraryOpen && !taskPage"
+        :settings="settings"
+        :shortcuts="shortcuts"
+        :busy="busy"
+        :retry-shortcuts="retryShortcuts"
+        :begin-shortcut-recording="beginShortcutRecording"
+        :end-shortcut-recording="endShortcutRecording"
+        :update-shortcut="updateShortcut"
+        :set-shortcut-enabled="setShortcutEnabled"
+        :restore-shortcut="restoreShortcut"
+        :restore-all-shortcuts="restoreAllShortcuts"
+        @save="emit('save', $event)"
+        @page="navigate"
+      />
       <ThemeSettings
-        v-show="!taskPage"
+        v-show="!taskPage && !shortcutPage"
         :settings="settings"
         :busy="busy"
         @theme="choosePreference('visual_series', $event)"
@@ -276,15 +306,15 @@ function choosePreference(key: keyof Preferences, value: string) {
       />
     </form>
     <PhraseSettings
-      v-show="!taskPage"
+      v-show="!taskPage && !shortcutPage"
       :settings="settings.phrases"
       :busy="busy"
       @save="emit('phrases', $event)"
       @page="navigate"
     />
-    <div v-show="!libraryOpen && !taskPage">
+    <div v-show="!libraryOpen && !taskPage && !shortcutPage">
       <RecordSettings :busy="busy" :clear-records="clearRecords" />
     </div>
-    <UpdateSettings v-show="!libraryOpen && !taskPage" />
+    <UpdateSettings v-show="!libraryOpen && !taskPage && !shortcutPage" />
   </section>
 </template>
