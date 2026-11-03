@@ -78,6 +78,10 @@ fn hide_on_main(app: &tauri::AppHandle) -> Result<(), String> {
 pub fn toggle(app: &tauri::AppHandle) {
     dispatch(app, toggle_on_main);
 }
+/// Toggle from code already running on the main thread.
+pub fn toggle_now(app: &tauri::AppHandle) {
+    report(app, toggle_on_main(app));
+}
 fn toggle_on_main(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let visible = super::macos::popup_visible(app)?;

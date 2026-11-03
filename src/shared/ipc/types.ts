@@ -24,6 +24,18 @@ export const emptyPhrases = (): Phrases => ({
   selected_id: null,
 });
 export type BeanRange = 'day' | 'week';
+export type ShortcutKind = 'toggle' | 'pause';
+export type ShortcutModifier = 'control' | 'alt' | 'shift' | 'meta';
+export interface ShortcutBinding {
+  modifiers: ShortcutModifier[];
+  key: string;
+}
+export interface ShortcutBindings {
+  toggle: ShortcutBinding;
+  pause: ShortcutBinding;
+  toggle_enabled: boolean;
+  pause_enabled: boolean;
+}
 export type ThemeOptionValue = string | number | boolean;
 export interface ThemeOptionsChange {
   theme_id: SeriesId;
@@ -43,6 +55,28 @@ export interface Settings {
   focus_mode: FocusMode;
   appearance: Appearance;
   visual_series: SeriesId;
+  global_shortcuts?: boolean;
+  shortcut_bindings?: ShortcutBindings;
+}
+export interface ShortcutBindingStatus {
+  enabled: boolean;
+  active: boolean;
+  active_binding: ShortcutBinding | null;
+  stale_bindings: ShortcutBinding[];
+  error: string | null;
+  is_default: boolean;
+}
+export interface ShortcutStatus {
+  enabled: boolean;
+  recording: boolean;
+  platform: 'macos' | 'other';
+  toggle: ShortcutBindingStatus;
+  pause: ShortcutBindingStatus;
+}
+export interface ShortcutMutation {
+  snapshot: Snapshot;
+  status: ShortcutStatus;
+  error: string | null;
 }
 export type Preferences = Pick<Settings, 'locale' | 'appearance' | 'visual_series'>;
 export interface Interval {

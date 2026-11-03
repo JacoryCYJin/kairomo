@@ -22,6 +22,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(updates::Updates::default())
         .manage(platform::popup_startup::PopupStartup::default())
         .setup(|app| {
@@ -33,6 +34,7 @@ pub fn run() {
                 Runtime::open(&path.join("kairomo.sqlite3")).map_err(std::io::Error::other)?;
             app.manage(AppState(Mutex::new(runtime)));
             platform::setup(app.handle())?;
+            platform::shortcuts::setup(app.handle());
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(1));
@@ -72,6 +74,10 @@ pub fn run() {
                 if window.label() == "main" {
                     platform::windows::hide(window.app_handle());
                 } else {
+                    let handle = window.app_handle().clone();
+                    std::thread::spawn(move || {
+                        let _ = platform::shortcuts::end_recording(&handle);
+                    });
                     let _ = window.hide();
                 }
             }
@@ -90,6 +96,14 @@ pub fn run() {
             commands::cancel_session,
             commands::sessions,
             commands::save_settings,
+            commands::shortcut_status,
+            commands::retry_shortcuts,
+            commands::begin_shortcut_recording,
+            commands::end_shortcut_recording,
+            commands::update_shortcut,
+            commands::restore_shortcut,
+            commands::set_shortcut_enabled,
+            commands::restore_all_shortcuts,
             commands::save_preferences,
             commands::save_phrases,
             commands::save_bean_range,
@@ -106,6 +120,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Unable to start Kairomo; check app-data access and SQLite integrity");
     app.run(|handle, event| {
+        if matches!(&event, tauri::RunEvent::Ready) {
+            platform::shortcuts::start(handle);
+        }
+        if matches!(&event, tauri::RunEvent::Exit) {
+            platform::shortcuts::shutdown(handle);
+        }
         if let tauri::RunEvent::ExitRequested { ref api, .. } = event {
             if let Some(state) = handle.try_state::<AppState>() {
                 let result = state

@@ -12,6 +12,7 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 use timer_core::{Kind, Phase, Snapshot, TargetReached};
 pub mod popup_startup;
+pub mod shortcuts;
 pub mod windows;
 struct TrayMenu {
     open: MenuItem<tauri::Wry>,
@@ -33,6 +34,30 @@ pub async fn sync_window_appearance(
 }
 pub fn show(app: &tauri::AppHandle) {
     windows::show(app);
+}
+pub fn toggle_pause(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let result = state
+        .0
+        .lock()
+        .map_err(|_| "runtime_unavailable".to_string())
+        .and_then(|mut rt| {
+            let action = match rt.engine.state.phase {
+                Phase::Running => "pause",
+                Phase::Paused => "resume",
+                Phase::Idle => return Ok(rt.engine.state.clone()),
+            };
+            rt.action(action, "")
+        });
+    match result {
+        Ok(snapshot) => {
+            let _ = app.emit("timer:changed", snapshot);
+        }
+        Err(error) => {
+            let _ = app.emit("runtime:error", error);
+            show(app);
+        }
+    }
 }
 pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let name = app.config().product_name.as_deref().unwrap_or("Kairomo");
@@ -84,30 +109,7 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     tray.on_menu_event(|app, event| match event.id.as_ref() {
         "open" => show(app),
-        "toggle" => {
-            let state = app.state::<AppState>();
-            let result = state
-                .0
-                .lock()
-                .map_err(|_| "runtime_unavailable".to_string())
-                .and_then(|mut rt| {
-                    let action = match rt.engine.state.phase {
-                        Phase::Running => "pause",
-                        Phase::Paused => "resume",
-                        Phase::Idle => return Ok(rt.engine.state.clone()),
-                    };
-                    rt.action(action, "")
-                });
-            match result {
-                Ok(s) => {
-                    let _ = app.emit("timer:changed", s);
-                }
-                Err(e) => {
-                    let _ = app.emit("runtime:error", e);
-                    show(app);
-                }
-            }
-        }
+        "toggle" => toggle_pause(app),
         "quit" => app.exit(0),
         _ => (),
     })

@@ -9,6 +9,8 @@ test('nested phrase pages restore their own parent positions without overwriting
   assert.equal(nav.navigate('settings', 780).scrollTop, 360);
   assert.equal(nav.navigate('task-manager', 410).scrollTop, 0);
   assert.equal(nav.navigate('settings', 230).scrollTop, 410);
+  assert.equal(nav.navigate('shortcut-manager', 510).scrollTop, 0);
+  assert.equal(nav.navigate('settings', 240).scrollTop, 510);
 });
 test('new child visits start at the top and repeated notifications do not reset the current page', () => {
   const nav = settingsNavigation();

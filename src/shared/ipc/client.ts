@@ -9,6 +9,10 @@ import type {
   Preferences,
   Session,
   Settings,
+  ShortcutBinding,
+  ShortcutKind,
+  ShortcutMutation,
+  ShortcutStatus,
   ThemeOptionsChange,
   TaskChange,
   Snapshot,
@@ -32,6 +36,18 @@ export const api = {
     invoke<Snapshot>('timer_action', { action, title, expectedSessionId, expectedPhase }),
   cancelSession: (expectedId: string) => invoke<Snapshot>('cancel_session', { expectedId }),
   settings: (settings: Settings) => invoke<Snapshot>('save_settings', { settings }),
+  shortcutStatus: () => invoke<ShortcutStatus>('shortcut_status'),
+  retryShortcuts: () => invoke<ShortcutMutation>('retry_shortcuts'),
+  beginShortcutRecording: () => invoke<ShortcutMutation>('begin_shortcut_recording'),
+  endShortcutRecording: () => invoke<ShortcutMutation>('end_shortcut_recording'),
+  updateShortcut: (kind: ShortcutKind, binding: ShortcutBinding) =>
+    invoke<ShortcutMutation>('update_shortcut', { kind, binding }),
+  setShortcutEnabled: (kind: ShortcutKind, enabled: boolean) =>
+    invoke<ShortcutMutation>('set_shortcut_enabled', { kind, enabled }),
+  restoreShortcut: (kind: ShortcutKind) => invoke<ShortcutMutation>('restore_shortcut', { kind }),
+  restoreAllShortcuts: () => invoke<ShortcutMutation>('restore_all_shortcuts'),
+  onShortcutsChanged: (handler: (status: ShortcutStatus) => void) =>
+    listen<ShortcutStatus>('shortcuts:changed', (event) => handler(event.payload)),
   themeOptions: (change: ThemeOptionsChange) =>
     invoke<Snapshot>('save_theme_options', { themeId: change.theme_id, values: change.values }),
   beanRange: (range: BeanRange) => invoke<Snapshot>('save_bean_range', { range }),

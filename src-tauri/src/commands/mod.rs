@@ -1,6 +1,6 @@
 use crate::runtime::AppState;
 use tauri::{Emitter, Manager, State};
-use timer_core::{Phase, Repository, Session, Settings, Snapshot};
+use timer_core::{Phase, Repository, Session, Settings, ShortcutBinding, ShortcutKind, Snapshot};
 #[tauri::command]
 pub async fn sync_window_appearance(
     window: tauri::WebviewWindow,
@@ -64,19 +64,85 @@ pub fn sessions(state: State<'_, AppState>) -> Result<Vec<Session>, String> {
         .sessions()
         .map_err(|e| e.to_string())
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_settings(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Snapshot, String> {
-    let snapshot = state
-        .0
-        .lock()
-        .map_err(|_| "runtime_unavailable")?
-        .configure(settings)?;
+    let snapshot = {
+        let mut runtime = state
+            .0
+            .lock()
+            .map_err(|_| "runtime_unavailable".to_string())?;
+        runtime.configure(settings)?
+    };
     let _ = app.emit("timer:changed", &snapshot);
+    crate::platform::shortcuts::apply_from_saved(&app);
     Ok(snapshot)
+}
+#[tauri::command]
+pub fn shortcut_status(
+    state: State<'_, crate::platform::shortcuts::Shortcuts>,
+) -> crate::platform::shortcuts::ShortcutStatus {
+    state.0.status()
+}
+#[tauri::command(async)]
+pub fn retry_shortcuts(
+    app: tauri::AppHandle,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    crate::platform::shortcuts::retry_shortcuts(&app)
+}
+#[tauri::command(async)]
+pub fn begin_shortcut_recording(
+    app: tauri::AppHandle,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    crate::platform::shortcuts::begin_recording(&app)
+}
+#[tauri::command(async)]
+pub fn end_shortcut_recording(
+    app: tauri::AppHandle,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    crate::platform::shortcuts::end_recording(&app)
+}
+#[tauri::command(async)]
+pub fn update_shortcut(
+    app: tauri::AppHandle,
+    kind: String,
+    binding: ShortcutBinding,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    let kind = shortcut_kind(&kind)?;
+    crate::platform::shortcuts::update_shortcut(&app, kind, binding)
+}
+#[tauri::command(async)]
+pub fn restore_shortcut(
+    app: tauri::AppHandle,
+    kind: String,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    let kind = shortcut_kind(&kind)?;
+    crate::platform::shortcuts::restore_shortcut(&app, kind)
+}
+#[tauri::command(async)]
+pub fn set_shortcut_enabled(
+    app: tauri::AppHandle,
+    kind: String,
+    enabled: bool,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    let kind = shortcut_kind(&kind)?;
+    crate::platform::shortcuts::set_shortcut_enabled(&app, kind, enabled)
+}
+#[tauri::command(async)]
+pub fn restore_all_shortcuts(
+    app: tauri::AppHandle,
+) -> Result<crate::platform::shortcuts::ShortcutMutation, String> {
+    crate::platform::shortcuts::restore_all_shortcuts(&app)
+}
+fn shortcut_kind(value: &str) -> Result<ShortcutKind, String> {
+    match value {
+        "toggle" => Ok(ShortcutKind::Toggle),
+        "pause" => Ok(ShortcutKind::Pause),
+        _ => Err("invalid_shortcut".into()),
+    }
 }
 #[tauri::command]
 pub fn save_theme_options(
