@@ -2031,6 +2031,7 @@ dependencies = [
  "cc",
  "chrono",
  "reqwest",
+ "ring",
  "rustls",
  "semver",
  "serde",

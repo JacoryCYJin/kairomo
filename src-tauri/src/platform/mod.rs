@@ -11,6 +11,7 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 use timer_core::{Kind, Phase, Snapshot, TargetReached};
+pub mod handoff;
 pub mod popup_startup;
 pub mod shortcuts;
 pub mod windows;

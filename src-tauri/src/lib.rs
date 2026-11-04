@@ -8,6 +8,7 @@ use tauri::{Emitter, Manager};
 
 pub fn run() {
     updates::initialize_tls();
+    let handoff_nonce = platform::handoff::launch_nonce();
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
@@ -25,7 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(updates::Updates::default())
         .manage(platform::popup_startup::PopupStartup::default())
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let path = app.path().app_data_dir()?;
@@ -33,6 +34,21 @@ pub fn run() {
             let runtime =
                 Runtime::open(&path.join("kairomo.sqlite3")).map_err(std::io::Error::other)?;
             app.manage(AppState(Mutex::new(runtime)));
+            if let Some(nonce) = handoff_nonce.as_deref() {
+                let state = app.state::<AppState>();
+                let result = state
+                    .0
+                    .lock()
+                    .map_err(|_| "runtime_unavailable".to_string())
+                    .and_then(|mut runtime| {
+                        platform::handoff::consume_startup(&path, &mut runtime, nonce)
+                    });
+                if let Err(error) = result {
+                    let _ = app.emit("runtime:error", error);
+                }
+            } else {
+                platform::handoff::discard_all(&path);
+            }
             platform::setup(app.handle())?;
             platform::shortcuts::setup(app.handle());
             let handle = app.handle().clone();
@@ -128,14 +144,25 @@ pub fn run() {
         }
         if let tauri::RunEvent::ExitRequested { ref api, .. } = event {
             if let Some(state) = handle.try_state::<AppState>() {
-                let result = state
-                    .0
-                    .lock()
-                    .map_err(|_| "runtime_unavailable".to_string())
-                    .and_then(|mut rt| rt.shutdown());
+                let data_dir = handle.path().app_data_dir().map_err(std::io::Error::other);
+                let result = data_dir.and_then(|data_dir| {
+                    state
+                        .0
+                        .lock()
+                        .map_err(|_| "runtime_unavailable".to_string())
+                        .and_then(|mut rt| {
+                            let request = platform::handoff::load_request(&data_dir);
+                            let outcome = rt.shutdown_for_handoff()?;
+                            platform::handoff::finish_exit(&data_dir, request, &outcome)
+                        })
+                        .map_err(std::io::Error::other)
+                });
                 if let Err(e) = result {
+                    if let Ok(data_dir) = handle.path().app_data_dir() {
+                        platform::handoff::discard_all(&data_dir);
+                    }
                     api.prevent_exit();
-                    let _ = handle.emit("runtime:error", e);
+                    let _ = handle.emit("runtime:error", e.to_string());
                     platform::show(handle);
                 }
             }

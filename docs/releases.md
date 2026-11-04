@@ -23,9 +23,17 @@ npm run build:beta
 bash scripts/dev.sh beta
 ```
 
-macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依赖；后续复用缓存。脚本不启动开发服务、不停止当前计时、不自动安装或发布。
+`build:beta` 只构建，不安装、不退出当前 Beta、不上传。应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.8/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
 
-应用位于 `target/release/bundle/macos/Kairomo Beta.app`；DMG、更新包、签名、`latest.json` 和 SHA-256 校验清单位于 `target/beta/0.1.0-beta.8/`。打包目标是构建机器的架构，不把 Apple Silicon 构建称为 Intel 或通用版本。
+本地替换并接续正在运行的计时使用：
+
+```bash
+npm run install:beta
+```
+
+安装命令会先完成打包和新包校验，再退出旧 Beta、替换 `/Applications/Kairomo Beta.app`、启动新 Beta。支持交接的版本会校验一笔与本次安装和当前会话绑定的 token：只有同一次替换、同一会话、同一原始 checkpoint 哈希且暂停原因是退出时才自动恢复；token 一次性消费，普通启动不会恢复旧 quit 检查点。当前尚未支持交接的旧 Beta 首次安装只能正常退出和重启，计时保持暂停，需要手动继续一次；之后的替换才支持自动接续。
+
+macOS 需要 Xcode 构建工具。本机首次 release 编译会构建完整依赖；后续复用缓存。`build:beta` 不启动开发服务、不停止当前计时、不自动安装或发布；`install:beta` 会按上文退出、替换和重启本地 Beta，但仍不会上传或发布。
 
 双击 DMG 后将 Kairomo Beta 拖入 Applications。安装后从 `/Applications/Kairomo Beta.app` 启动日常版本。开发构建位于 `target/debug/bundle/macos/Kairomo Dev.app`，开发启动继续使用 `bash scripts/dev.sh start`。
 
