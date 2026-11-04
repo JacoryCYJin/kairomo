@@ -19,6 +19,12 @@ pub struct SqliteRepository {
     connection: Connection,
 }
 impl SqliteRepository {
+    pub fn checkpoint_state(&self) -> Result<Option<String>, StorageError> {
+        self.connection
+            .query_row("SELECT state FROM checkpoint WHERE id=1", [], |r| r.get(0))
+            .optional()
+            .map_err(StorageError::from)
+    }
     pub fn backup_to(&self, destination: &Path) -> Result<(), StorageError> {
         self.connection.backup("main", destination, None)?;
         Ok(())

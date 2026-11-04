@@ -17,6 +17,16 @@ pub struct Runtime {
     last_tick: Instant,
     last_wall: i64,
     pending_notifications: VecDeque<TargetReached>,
+    startup_checkpoint_hash: Option<String>,
+}
+
+pub struct ShutdownOutcome {
+    pub was_running: bool,
+    pub phase: Phase,
+    pub pause_reason: Option<String>,
+    pub session_id: Option<String>,
+    pub checkpoint_hash: Option<String>,
+    pub revision: u64,
 }
 pub struct AppState(pub Mutex<Runtime>);
 pub fn now_ms() -> i64 {
@@ -25,9 +35,21 @@ pub fn now_ms() -> i64 {
         .unwrap_or_default()
         .as_millis() as i64
 }
+pub fn checkpoint_hash(raw: &str) -> String {
+    ring::digest::digest(&ring::digest::SHA256, raw.as_bytes())
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 impl Runtime {
     pub fn open(path: &Path) -> Result<Self, String> {
         let mut repository = SqliteRepository::open(path).map_err(|e| e.to_string())?;
+        let startup_checkpoint_hash = repository
+            .checkpoint_state()
+            .map_err(|e| e.to_string())?
+            .as_deref()
+            .map(checkpoint_hash);
         let checkpoint = repository.load_checkpoint().map_err(|e| e.to_string())?;
         let mut engine = checkpoint.map(Engine::restore).unwrap_or_default();
         engine
@@ -57,6 +79,7 @@ impl Runtime {
             last_tick: Instant::now(),
             last_wall: now_ms(),
             pending_notifications: VecDeque::new(),
+            startup_checkpoint_hash,
         })
     }
     /// Prepare state privately, commit it, then expose it to all entry points.
@@ -208,14 +231,51 @@ impl Runtime {
         Ok(())
     }
     pub fn shutdown(&mut self) -> Result<(), String> {
-        if self.engine.state.phase == Phase::Running {
+        self.shutdown_for_handoff().map(|_| ())
+    }
+    pub fn shutdown_for_handoff(&mut self) -> Result<ShutdownOutcome, String> {
+        let was_running = self.engine.state.phase == Phase::Running;
+        if was_running {
             let (mut next, reached, completed, measured) = self.advanced();
             if next.state.phase == Phase::Running {
                 next.pause(now_ms(), "quit").map_err(|e| e.to_string())?;
             }
             self.commit_step(next, &completed, measured, reached)?;
         }
-        Ok(())
+        let checkpoint_hash = self
+            .repository
+            .checkpoint_state()
+            .map_err(|e| e.to_string())?
+            .as_deref()
+            .map(checkpoint_hash);
+        Ok(ShutdownOutcome {
+            was_running,
+            phase: self.engine.state.phase.clone(),
+            pause_reason: self.engine.state.pause_reason.clone(),
+            session_id: self
+                .engine
+                .state
+                .current
+                .as_ref()
+                .map(|session| session.id.clone()),
+            checkpoint_hash,
+            revision: self.engine.state.revision,
+        })
+    }
+    pub fn startup_checkpoint_hash(&self) -> Option<&str> {
+        self.startup_checkpoint_hash.as_deref()
+    }
+    pub fn resume_after_replace(&mut self) -> Result<Option<Snapshot>, String> {
+        if self.engine.state.phase != Phase::Paused
+            || self.engine.state.pause_reason.as_deref() != Some("quit")
+            || self.engine.state.current.is_none()
+        {
+            return Ok(None);
+        }
+        let mut next = self.engine.clone();
+        next.resume(now_ms()).map_err(|e| e.to_string())?;
+        let measured = Instant::now();
+        self.commit(next, &[], measured).map(Some)
     }
     pub fn configure(&mut self, settings: Settings) -> Result<Snapshot, String> {
         let (mut next, reached, completed, measured) = self.advanced();
@@ -889,6 +949,39 @@ mod tests {
             let id = rt.engine.state.current.as_ref().unwrap().id.clone();
             rt.cancel_session(&id).unwrap();
             assert_eq!(rt.repository.sessions().unwrap().len(), 1);
+        });
+    }
+
+    #[test]
+    fn handoff_hash_is_raw_checkpoint_and_resume_keeps_same_session() {
+        with_runtime(|rt, path| {
+            rt.action("start", "Read").unwrap();
+            rt.last_tick = Instant::now() - std::time::Duration::from_secs(3);
+            rt.tick().unwrap();
+            let id = rt.engine.state.current.as_ref().unwrap().id.clone();
+
+            let outcome = rt.shutdown_for_handoff().unwrap();
+            assert!(outcome.was_running);
+            assert_eq!(outcome.phase, Phase::Paused);
+            assert_eq!(outcome.pause_reason.as_deref(), Some("quit"));
+            assert_eq!(outcome.session_id.as_deref(), Some(id.as_str()));
+
+            let raw = rt.repository.checkpoint_state().unwrap().unwrap();
+            let expected = checkpoint_hash(&raw);
+            assert_eq!(outcome.checkpoint_hash.as_deref(), Some(expected.as_str()));
+            let paused_duration = rt.engine.state.current.as_ref().unwrap().duration_ms;
+
+            let mut restored = Runtime::open(path).unwrap();
+            assert_eq!(
+                restored.startup_checkpoint_hash(),
+                outcome.checkpoint_hash.as_deref()
+            );
+            let resumed = restored.resume_after_replace().unwrap().unwrap();
+            assert_eq!(resumed.phase, Phase::Running);
+            let current = resumed.current.as_ref().unwrap();
+            assert_eq!(current.id, id);
+            assert_eq!(current.duration_ms, paused_duration);
+            assert!(restored.resume_after_replace().unwrap().is_none());
         });
     }
 }

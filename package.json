@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "check": "vue-tsc --noEmit && eslint . && node scripts/check-architecture.mjs && node scripts/check-i18n.mjs",
+    "check": "vue-tsc --noEmit && eslint . && node scripts/check-architecture.mjs && node scripts/check-i18n.mjs && node scripts/check-window-config.mjs",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
     "format": "prettier --write src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
     "format:check": "prettier --check src scripts docs *.json *.ts *.js *.md .github/workflows/*.yml",
     "build:beta": "bash scripts/package-beta.sh",
+    "install:beta": "bash scripts/install-beta.sh",
     "test": "node scripts/test.mjs",
     "publish:beta-channel": "node scripts/publish-beta-channel.mjs"
   },
